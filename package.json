@@ -1,9 +1,12 @@
 {
-  "name": "test-gen",
+  "name": "@ldanh270/aatest",
   "version": "0.1.0",
-  "description": "AI-powered unit test generator for Express.js",
+  "description": "aatest - Auto AI Test Generator with AI-powered unit test generator with self-healing capabilities for Express.js",
+  "author": "ldanh270",
+  "license": "MIT",
+  "keywords": ["cli", "testing", "jest", "ai", "llm", "unit-test", "express"],
   "bin": {
-    "test-gen": "./dist/index.js"
+    "aatest": "./dist/index.js"
   },
   "type": "module",
   "files": [
