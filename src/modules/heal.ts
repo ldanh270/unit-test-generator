@@ -7,6 +7,7 @@ import { buildFixPrompt } from './prompt-builder.js';
 import { extractCodeBlock, writeErrorLog, ParseError } from './file-writer.js';
 import { logger } from '../utils/logger.js';
 import { ChatMessage } from '../types/llm.js';
+import { checkMissingDependencies, detectPackageManager, getInstallCommand } from '../utils/dependency-checker.js';
 
 export interface SelfHealOptions {
   testFilePath: string;
@@ -31,8 +32,34 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
   }
 
   logger.error(`Tests failed for ${testFilePath}`);
+  const errorOutput = result.stderr || result.stdout || '';
+  
   // Print a snippet of the error for the user to see
-  console.log('\n' + (result.stderr || result.stdout).slice(0, 1000) + '\n...');
+  console.log('\n' + errorOutput.slice(0, 1000) + '\n...');
+
+  // Fast-fail check for environment configuration errors
+  const isEnvError = 
+    errorOutput.includes('Jest encountered an unexpected token') ||
+    errorOutput.includes('Jest failed to parse a file') ||
+    errorOutput.includes('Cannot use import statement outside a module');
+
+  if (isEnvError) {
+    logger.error('Environment Configuration Error Detected!');
+    logger.warn('Jest failed to parse the test file. This usually means your project is not configured to run TypeScript or ESM tests with Jest.');
+    
+    const missingDeps = checkMissingDependencies();
+    if (missingDeps.length > 0) {
+      const pkgManager = detectPackageManager();
+      const cmd = getInstallCommand(pkgManager, missingDeps);
+      logger.hint(`Missing testing dependencies detected: ${missingDeps.join(', ')}`);
+      logger.hint(`Fix: Run \`${cmd}\` in your project and ensure jest.config.js is configured.`);
+    } else {
+      logger.hint('Fix: Please ensure your jest.config.js is correctly configured for your project.');
+    }
+    
+    logger.info('Self-healing skipped (LLM cannot fix your project environment).');
+    process.exit(1);
+  }
 
   if (!autoHeal) {
     const shouldHeal = await confirm({
