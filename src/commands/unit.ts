@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { loadConfig } from '../config.js';
 import { extractContext } from '../modules/ast-extractor.js';
 import { getRelativeImportPath } from '../modules/path-resolver.js';
+import { ensureDependencies } from '../utils/dependency-checker.js';
 import { buildGeneratePrompt } from '../modules/prompt-builder.js';
 import { LLMClient } from '../llm/client.js';
 import { getOutputPath, extractCodeBlock, writeFileSafe } from '../modules/file-writer.js';
@@ -28,6 +29,9 @@ export const unitCommand = new Command('unit')
       if (!config.sourceDir) {
         throw new Error('No output directory set. Run `test-gen init` or use the `--source` flag.');
       }
+      
+      // 1.5 Ensure environment is setup properly
+      await ensureDependencies();
       
       const maxRetries = options.retries ? parseInt(options.retries, 10) : config.maxRetries;
 

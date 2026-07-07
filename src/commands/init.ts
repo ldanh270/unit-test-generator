@@ -14,8 +14,7 @@ import { execSync } from 'child_process';
 import ora from 'ora';
 import { logger } from '../utils/logger.js';
 import { EnvWriter, EnvConfig } from '../config/env-writer.js';
-
-import { checkMissingDependencies, detectPackageManager, getInstallCommand } from '../utils/dependency-checker.js';
+import { ensureDependencies } from '../utils/dependency-checker.js';
 
 /**
  * The 'init' subcommand.
@@ -78,40 +77,7 @@ export const initCommand = new Command('init')
       }
 
       // 5. Check and install missing testing dependencies
-      const missingDeps = checkMissingDependencies();
-      if (missingDeps.length > 0) {
-        logger.blank();
-        const shouldInstall = await confirm({
-          message: `Missing testing dependencies detected: ${chalk.yellow(missingDeps.join(', '))}\n  Do you want to automatically install them now?`,
-          default: true,
-        });
-
-        if (shouldInstall) {
-          const pkgManager = detectPackageManager();
-          const cmd = getInstallCommand(pkgManager, missingDeps);
-          const spinner = ora(`Installing dependencies using ${pkgManager}...`).start();
-          try {
-            execSync(cmd, { stdio: 'ignore', cwd: process.cwd() });
-            spinner.succeed(`Dependencies installed successfully via ${pkgManager}!`);
-            
-            // Try to add test script if missing
-            const packageJsonPath = path.join(process.cwd(), 'package.json');
-            if (fs.existsSync(packageJsonPath)) {
-              const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-              pkg.scripts = pkg.scripts || {};
-              if (!pkg.scripts.test) {
-                 pkg.scripts.test = "jest";
-                 fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n');
-                 logger.success('Added "test": "jest" script to package.json');
-              }
-            }
-          } catch (err) {
-            spinner.fail(`Failed to install dependencies. You can run \`${cmd}\` manually.`);
-          }
-        } else {
-          logger.info('Skipping installation. Please ensure you install them later.');
-        }
-      }
+      await ensureDependencies();
 
       logger.blank();
       logger.nextSteps(['test-gen unit <path-to-file.js>']);

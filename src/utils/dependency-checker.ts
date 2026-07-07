@@ -1,5 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import { confirm } from '@inquirer/prompts';
+import chalk from 'chalk';
+import ora from 'ora';
+import { execSync } from 'child_process';
+import { logger } from './logger.js';
 
 export function isTypeScriptProject(): boolean {
   const cwd = process.cwd();
@@ -57,5 +62,60 @@ export function getInstallCommand(pkgManager: 'npm' | 'pnpm' | 'yarn' | 'bun', d
     case 'yarn': return `yarn add -D ${depsStr}`;
     case 'bun': return `bun add -d ${depsStr}`;
     default: return `npm install -D ${depsStr}`;
+  }
+}
+
+/**
+ * Checks for missing dependencies and prompts the user to automatically install them.
+ * Also automatically configures jest.config.js for TypeScript projects if needed.
+ */
+export async function ensureDependencies(): Promise<void> {
+  const missingDeps = checkMissingDependencies();
+  if (missingDeps.length === 0) return;
+
+  logger.blank();
+  const shouldInstall = await confirm({
+    message: `Missing testing dependencies detected: ${chalk.yellow(missingDeps.join(', '))}\n  Do you want to automatically install them now?`,
+    default: true,
+  });
+
+  if (!shouldInstall) {
+    logger.info('Skipping installation. Please ensure you install them later.');
+    return;
+  }
+
+  const pkgManager = detectPackageManager();
+  const cmd = getInstallCommand(pkgManager, missingDeps);
+  const spinner = ora(`Installing dependencies using ${pkgManager}...`).start();
+  
+  try {
+    execSync(cmd, { stdio: 'ignore', cwd: process.cwd() });
+    spinner.succeed(`Dependencies installed successfully via ${pkgManager}!`);
+    
+    // Add test script if missing
+    const packageJsonPath = path.join(process.cwd(), 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      pkg.scripts = pkg.scripts || {};
+      if (!pkg.scripts.test) {
+         pkg.scripts.test = "jest";
+         fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n');
+         logger.success('Added "test": "jest" script to package.json');
+      }
+    }
+
+    // Generate jest.config.js for TS if missing
+    if (isTypeScriptProject()) {
+      const jestJsConfig = path.join(process.cwd(), 'jest.config.js');
+      const jestTsConfig = path.join(process.cwd(), 'jest.config.ts');
+      
+      if (!fs.existsSync(jestJsConfig) && !fs.existsSync(jestTsConfig)) {
+        const configContent = `/** @type {import('ts-jest').JestConfigWithTsJest} */\nmodule.exports = {\n  preset: 'ts-jest',\n  testEnvironment: 'node',\n};\n`;
+        fs.writeFileSync(jestJsConfig, configContent);
+        logger.success('Created standard jest.config.js for TypeScript');
+      }
+    }
+  } catch (err) {
+    spinner.fail(`Failed to install dependencies. You can run \`${cmd}\` manually.`);
   }
 }
