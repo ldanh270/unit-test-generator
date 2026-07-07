@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { loadConfig } from '../config.js';
 import { extractContext } from '../modules/ast-extractor.js';
+import { getRelativeImportPath } from '../modules/path-resolver.js';
 import { buildGeneratePrompt } from '../modules/prompt-builder.js';
 import { LLMClient } from '../llm/client.js';
 import { getOutputPath, extractCodeBlock, writeFileSafe } from '../modules/file-writer.js';
@@ -32,11 +33,16 @@ export const unitCommand = new Command('unit')
 
       logger.header('Test-Gen', 'Generating Unit Tests');
       
-      // 2. AST Extract
+      // 2. AST Extract & Path Resolution
       const spinner = ora('Analyzing source file...').start();
       const filePath = path.resolve(cwd, file);
       const context = await extractContext(filePath);
-      spinner.succeed('Source file analyzed');
+      
+      const outputPath = getOutputPath(filePath, config.sourceDir, cwd);
+      context.testFilePath = outputPath;
+      context.relativeImportPath = getRelativeImportPath(outputPath, filePath);
+      
+      spinner.succeed('Source file analyzed & paths resolved');
       
       // 3. Validate exports
       if (context.exports.length === 0) {
@@ -78,9 +84,6 @@ export const unitCommand = new Command('unit')
 
       // 6. Extract Code Block
       const testCode = extractCodeBlock(llmResponse);
-      
-      // 7. Calculate Output Path
-      const outputPath = getOutputPath(filePath, config.sourceDir, cwd);
       
       // 8. Write File & Backup
       spinner.start('Writing file...');

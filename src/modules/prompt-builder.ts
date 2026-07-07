@@ -143,6 +143,14 @@ function buildUserPrompt(context: ExtractedContext): string {
   parts.push(buildSourceSection(context));
   parts.push('');
 
+  // --- Import Context ---
+  if (context.relativeImportPath) {
+    parts.push('=== IMPORT CONTEXT ===');
+    parts.push(`To import the tested functions from the source file into your test file, use the following exact relative path:`);
+    parts.push(`import { ... } from '${context.relativeImportPath}';`);
+    parts.push('');
+  }
+
   // --- Dependencies section ---
   parts.push('=== DEPENDENCIES TO MOCK ===');
   if (context.imports.length === 0) {

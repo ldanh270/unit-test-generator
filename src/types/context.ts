@@ -66,4 +66,8 @@ export interface ExtractedContext {
   imports: ImportedDep[];
   /** Detected Express routes */
   routes: RouteEndpoint[];
+  /** Absolute path of the generated test file */
+  testFilePath?: string;
+  /** The relative import path string to import the source file from the test file */
+  relativeImportPath?: string;
 }
