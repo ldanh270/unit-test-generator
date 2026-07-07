@@ -41,7 +41,9 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
   const isEnvError = 
     errorOutput.includes('Jest encountered an unexpected token') ||
     errorOutput.includes('Jest failed to parse a file') ||
-    errorOutput.includes('Cannot use import statement outside a module');
+    errorOutput.includes('Cannot use import statement outside a module') ||
+    errorOutput.includes('is not recognized as an internal or external command') ||
+    errorOutput.includes('command not found');
 
   if (isEnvError) {
     logger.error('Environment Configuration Error Detected!');

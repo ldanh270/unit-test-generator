@@ -57,9 +57,19 @@ export function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' | 'bun' {
 
 export function getInstallCommand(pkgManager: 'npm' | 'pnpm' | 'yarn' | 'bun', deps: string[]): string {
   const depsStr = deps.join(' ');
+  const cwd = process.cwd();
   switch (pkgManager) {
-    case 'pnpm': return `pnpm add -D ${depsStr}`;
-    case 'yarn': return `yarn add -D ${depsStr}`;
+    case 'pnpm': 
+      const isWorkspace = fs.existsSync(path.join(cwd, 'pnpm-workspace.yaml'));
+      return `pnpm add -D ${isWorkspace ? '-w ' : ''}${depsStr}`;
+    case 'yarn': 
+      // Yarn 1.x requires -W to add to workspace root, checking for workspaces in package.json
+      let isYarnWorkspace = false;
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+        if (pkg.workspaces) isYarnWorkspace = true;
+      } catch {}
+      return `yarn add -D ${isYarnWorkspace ? '-W ' : ''}${depsStr}`;
     case 'bun': return `bun add -d ${depsStr}`;
     default: return `npm install -D ${depsStr}`;
   }
@@ -89,7 +99,8 @@ export async function ensureDependencies(): Promise<void> {
   const spinner = ora(`Installing dependencies using ${pkgManager}...`).start();
   
   try {
-    execSync(cmd, { stdio: 'ignore', cwd: process.cwd() });
+    // using stdio 'pipe' so we can capture and print the error if it fails
+    execSync(cmd, { stdio: 'pipe', cwd: process.cwd() });
     spinner.succeed(`Dependencies installed successfully via ${pkgManager}!`);
     
     // Add test script if missing
@@ -115,7 +126,9 @@ export async function ensureDependencies(): Promise<void> {
         logger.success('Created standard jest.config.js for TypeScript');
       }
     }
-  } catch (err) {
-    spinner.fail(`Failed to install dependencies. You can run \`${cmd}\` manually.`);
+  } catch (err: any) {
+    spinner.fail(`Failed to install dependencies.`);
+    logger.error(err.stderr ? err.stderr.toString() : err.message);
+    logger.hint(`You can try running \`${cmd}\` manually.`);
   }
 }

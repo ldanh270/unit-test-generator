@@ -25,10 +25,12 @@ export async function runJest(testFilePath: string, cwd: string = process.cwd())
 
     // Check if Jest exists locally in node_modules
     const localJestPath = path.join(cwd, 'node_modules', '.bin', 'jest');
-    const localJestExists = fs.existsSync(localJestPath) || fs.existsSync(localJestPath + '.cmd');
+    const localJestCmdPath = localJestPath + '.cmd';
 
-    if (localJestExists) {
-      // Use local jest directly instead of npx for faster execution
+    if (process.platform === 'win32' && fs.existsSync(localJestCmdPath)) {
+      command = localJestCmdPath;
+      args = [testFilePath, '--no-coverage', '--colors=false', '--forceExit'];
+    } else if (fs.existsSync(localJestPath)) {
       command = localJestPath;
       args = [testFilePath, '--no-coverage', '--colors=false', '--forceExit'];
     } else {
