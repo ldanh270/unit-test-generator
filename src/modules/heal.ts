@@ -43,6 +43,7 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
     errorOutput.includes('Jest failed to parse a file') ||
     errorOutput.includes('Cannot use import statement outside a module') ||
     errorOutput.includes('is not recognized as an internal or external command') ||
+    errorOutput.includes('module is not defined in ES module scope') ||
     errorOutput.includes('command not found');
 
   if (isEnvError) {

@@ -122,22 +122,29 @@ export async function ensureDependencies(): Promise<void> {
 
   // Generate jest.config.js for TS if missing (even if dependencies were already installed)
   if (isTypeScriptProject()) {
-    const jestJsConfig = path.join(process.cwd(), 'jest.config.js');
+    let isEsm = false;
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+      if (pkg.type === 'module') isEsm = true;
+    } catch {}
+
+    const configFileName = isEsm ? 'jest.config.cjs' : 'jest.config.js';
+    const configPath = path.join(process.cwd(), configFileName);
     const jestTsConfig = path.join(process.cwd(), 'jest.config.ts');
     
-    if (!fs.existsSync(jestJsConfig) && !fs.existsSync(jestTsConfig)) {
+    if (!fs.existsSync(configPath) && !fs.existsSync(jestTsConfig)) {
       logger.blank();
       const shouldCreateConfig = await confirm({
-        message: `Missing jest.config.js for TypeScript project. Do you want to auto-create a standard one?`,
+        message: `Missing ${configFileName} for TypeScript project. Do you want to auto-create a standard one?`,
         default: true,
       });
 
       if (shouldCreateConfig) {
         const configContent = `/** @type {import('ts-jest').JestConfigWithTsJest} */\nmodule.exports = {\n  preset: 'ts-jest',\n  testEnvironment: 'node',\n};\n`;
-        fs.writeFileSync(jestJsConfig, configContent);
-        logger.success('Created standard jest.config.js for TypeScript');
+        fs.writeFileSync(configPath, configContent);
+        logger.success(`Created standard ${configFileName} for TypeScript`);
       } else {
-        logger.info('Skipping jest.config.js creation. Tests may fail if Jest is not configured properly.');
+        logger.info(`Skipping ${configFileName} creation. Tests may fail if Jest is not configured properly.`);
       }
     }
   }
