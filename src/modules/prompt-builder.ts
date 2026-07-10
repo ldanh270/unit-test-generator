@@ -26,7 +26,7 @@ const MAX_STDERR_CHARS = 2_000;
 // System prompt (fixed — never changes per call)
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are an expert Node.js backend testing engineer.
+const getSystemPrompt = (language: string) => `You are an expert Node.js backend testing engineer.
 
 Follow these STRICT rules WITHOUT exception:
 1. Framework: Use Jest ONLY. Use Supertest for HTTP endpoint testing.
@@ -38,7 +38,7 @@ Follow these STRICT rules WITHOUT exception:
    - At least 2 Error Case tests (4xx or 5xx)
 5. Output format: Return ONLY the raw code.
    - NO explanation text before or after the code.
-   - Wrap the ENTIRE output in exactly ONE code block: \`\`\`javascript ... \`\`\`
+   - Wrap the ENTIRE output in exactly ONE code block: \`\`\`${language === 'typescript' ? 'typescript' : 'javascript'} ... \`\`\`
    - Do NOT split into multiple code blocks.`;
 
 // ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ export function buildGeneratePrompt(
 ): ChatMessage[] {
   const systemMessage: ChatMessage = {
     role: 'system',
-    content: SYSTEM_PROMPT,
+    content: getSystemPrompt(context.language),
   };
 
   const userMessage: ChatMessage = {

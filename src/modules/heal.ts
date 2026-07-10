@@ -64,6 +64,17 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
     process.exit(1);
   }
 
+  const isNoTestsFound = errorOutput.includes('No tests found');
+
+  if (isNoTestsFound) {
+    logger.error('Jest Configuration Error Detected!');
+    logger.warn('Jest could not find the generated test file (No tests found).');
+    logger.hint('This usually means the generated file path does not match your Jest "testMatch" or "testRegex" configuration.');
+    logger.hint(`Check if ${testFilePath} is included in your test matches.`);
+    logger.info('Self-healing skipped (LLM cannot fix your Jest configuration).');
+    process.exit(1);
+  }
+
   if (!autoHeal) {
     const shouldHeal = await confirm({
       message: 'Tests failed. Do you want to auto-fix? (Tip: use --auto-heal to skip this prompt)',

@@ -140,7 +140,16 @@ export async function ensureDependencies(): Promise<void> {
       });
 
       if (shouldCreateConfig) {
-        const configContent = `/** @type {import('ts-jest').JestConfigWithTsJest} */\nmodule.exports = {\n  preset: 'ts-jest',\n  testEnvironment: 'node',\n};\n`;
+        const configContent = `/** @type {import('ts-jest').JestConfigWithTsJest} */
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',${
+    isEsm
+      ? `\n  extensionsToTreatAsEsm: ['.ts'],\n  transform: {\n    '^.+\\\\.tsx?$': ['ts-jest', { useESM: true }],\n  },`
+      : ''
+  }
+};
+`;
         fs.writeFileSync(configPath, configContent);
         logger.success(`Created standard ${configFileName} for TypeScript`);
       } else {
