@@ -37,7 +37,7 @@ export const unitCommand = new Command('unit')
   .argument('<file>', 'File path to generate test for')
   .option('-s, --source <dir>', 'Override output test directory')
   .option('-H, --auto-heal', 'Automatically attempt to fix failing tests', false)
-  .option('-r, --retries <n>', 'Max retries for self-healing', '3')
+  .option('-r, --retries <n>', 'Max retries for self-healing')
   .option('--dry-run', 'Print prompt and LLM response without writing files', false)
   .option('-v, --verbose', 'Enable verbose logging', false)
   .action(async (file, options) => {
