@@ -41,8 +41,15 @@ Follow these STRICT rules WITHOUT exception:
 5. Output format: Return ONLY the raw code.
    - NO explanation text before or after the code.
    - Wrap the ENTIRE output in exactly ONE code block: \`\`\`${isTs ? 'typescript' : 'javascript'} ... \`\`\`
-   - Do NOT split into multiple code blocks.${isTs ? `
-6. TypeScript ONLY: The FIRST LINE of your output MUST be:
+   - Do NOT split into multiple code blocks.
+6. Nullable fields in mocks: ALWAYS use \`null\` (not \`undefined\`) for fields
+   that represent missing DB records (e.g. lockedUntil: null, revokedAt: null).
+   Using \`undefined\` causes assertion mismatches against repository return values.
+7. Crypto / hashing mocks: NEVER hardcode an expected SHA-256 / hash string.
+   Instead, mock the hashing utility (e.g. jest.mock('crypto', ...)) so the
+   function returns a controlled string like "mocked-hash", then assert on that
+   controlled value — not on a real hash digest.${isTs ? `
+8. TypeScript ONLY: The FIRST LINE of your output MUST be:
    /// <reference types="jest" />
    This is required so TypeScript recognises describe, it, expect, and jest.mock without TS2304 errors.` : ''}`;
 };

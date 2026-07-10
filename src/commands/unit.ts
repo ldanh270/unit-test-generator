@@ -87,7 +87,14 @@ export const unitCommand = new Command('unit')
       }
 
       // 6. Extract Code Block
-      const testCode = extractCodeBlock(llmResponse);
+      let testCode = extractCodeBlock(llmResponse);
+
+      // Defensive: for TypeScript test files, always ensure the jest triple-slash
+      // reference is the very first line so TypeScript recognises jest globals.
+      // This guards against the LLM forgetting rule 8 in the system prompt.
+      if (outputPath.endsWith('.ts') && !testCode.startsWith('/// <reference types="jest" />')) {
+        testCode = '/// <reference types="jest" />\n' + testCode;
+      }
       
       // 8. Write File & Backup
       spinner.start('Writing file...');

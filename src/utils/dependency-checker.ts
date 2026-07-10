@@ -144,6 +144,22 @@ export async function ensureDependencies(): Promise<void> {
 
     if (existingConfig) {
       logger.hint(`Found existing Jest config: ${existingConfig} — skipping auto-creation.`);
+
+      // If more than one config file exists Jest will crash with
+      // "Multiple configurations found". Fix this by making the test script
+      // in package.json explicitly select the primary config with --config,
+      // so Jest ignores the others.
+      const allExistingConfigs = ALL_JEST_CONFIG_NAMES.filter(
+        (name) => fs.existsSync(path.join(process.cwd(), name)),
+      );
+      if (allExistingConfigs.length > 1) {
+        logger.warn(
+          `Multiple Jest configs detected: ${allExistingConfigs.join(', ')}. ` +
+          `Updating package.json to use --config ${existingConfig} explicitly.`,
+        );
+        reconcileJestTestScript(existingConfig);
+      }
+
     } else {
       const configFileName = isEsm ? 'jest.config.cjs' : 'jest.config.js';
       const configPath = path.join(process.cwd(), configFileName);
@@ -220,5 +236,40 @@ export function ensureJestTypesInTsConfig(): void {
     logger.success('Added "jest" to compilerOptions.types in tsconfig.json');
   } catch (err: any) {
     logger.warn(`Could not update tsconfig.json: ${err.message}`);
+  }
+}
+
+/**
+ * Updates the "test" script in package.json to explicitly pass `--config <configFile>`
+ * to Jest. This is the correct fix when multiple Jest config files coexist in the
+ * same directory (e.g. jest.config.js AND jest.config.cjs), which would otherwise
+ * cause: "Multiple configurations found. Implicit config resolution does not allow
+ * multiple configuration files."
+ *
+ * Only patches scripts.test if it starts with "jest" and doesn't already have --config.
+ */
+export function reconcileJestTestScript(primaryConfigFile: string): void {
+  const pkgPath = path.join(process.cwd(), 'package.json');
+  if (!fs.existsSync(pkgPath)) return;
+
+  let pkg: any;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  } catch {
+    return;
+  }
+
+  const currentScript: string = pkg?.scripts?.test ?? '';
+
+  // Only touch scripts that start with "jest" and don't already pin a config
+  if (!currentScript.startsWith('jest') || currentScript.includes('--config')) return;
+
+  pkg.scripts.test = `jest --config ${primaryConfigFile}`;
+
+  try {
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+    logger.success(`Updated package.json scripts.test → "jest --config ${primaryConfigFile}"`);
+  } catch (err: any) {
+    logger.warn(`Could not update package.json: ${err.message}`);
   }
 }
