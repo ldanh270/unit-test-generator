@@ -120,7 +120,7 @@ export async function ensureDependencies(): Promise<void> {
     }
   }
 
-  // Generate jest.config.js for TS if missing (even if dependencies were already installed)
+  // Generate jest config for TS if missing (even if dependencies were already installed)
   if (isTypeScriptProject()) {
     let isEsm = false;
     try {
@@ -128,14 +128,29 @@ export async function ensureDependencies(): Promise<void> {
       if (pkg.type === 'module') isEsm = true;
     } catch {}
 
-    const configFileName = isEsm ? 'jest.config.cjs' : 'jest.config.js';
-    const configPath = path.join(process.cwd(), configFileName);
-    const jestTsConfig = path.join(process.cwd(), 'jest.config.ts');
-    
-    if (!fs.existsSync(configPath) && !fs.existsSync(jestTsConfig)) {
+    // Check ALL possible jest config file names to avoid the
+    // "Multiple configurations found" conflict that occurs when
+    // the project already has jest.config.js and we'd create jest.config.cjs.
+    const ALL_JEST_CONFIG_NAMES = [
+      'jest.config.js',
+      'jest.config.cjs',
+      'jest.config.mjs',
+      'jest.config.ts',
+      'jest.config.cts',
+    ];
+    const existingConfig = ALL_JEST_CONFIG_NAMES.find(
+      (name) => fs.existsSync(path.join(process.cwd(), name)),
+    );
+
+    if (existingConfig) {
+      logger.hint(`Found existing Jest config: ${existingConfig} — skipping auto-creation.`);
+    } else {
+      const configFileName = isEsm ? 'jest.config.cjs' : 'jest.config.js';
+      const configPath = path.join(process.cwd(), configFileName);
+
       logger.blank();
       const shouldCreateConfig = await confirm({
-        message: `Missing ${configFileName} for TypeScript project. Do you want to auto-create a standard one?`,
+        message: `No Jest config found for TypeScript project. Auto-create ${configFileName}?`,
         default: true,
       });
 
@@ -143,10 +158,9 @@ export async function ensureDependencies(): Promise<void> {
         const configContent = `/** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset: 'ts-jest',
-  testEnvironment: 'node',${
-    isEsm
-      ? `\n  extensionsToTreatAsEsm: ['.ts'],\n  transform: {\n    '^.+\\\\.tsx?$': ['ts-jest', { useESM: true }],\n  },`
-      : ''
+  testEnvironment: 'node',${isEsm
+    ? `\n  extensionsToTreatAsEsm: ['.ts'],\n  transform: {\n    '^.+\\.tsx?$': ['ts-jest', { useESM: true }],\n  },`
+    : ''
   }
 };
 `;
@@ -156,5 +170,55 @@ module.exports = {
         logger.info(`Skipping ${configFileName} creation. Tests may fail if Jest is not configured properly.`);
       }
     }
+
+    // Ensure tsconfig.json includes jest types so TypeScript recognises
+    // jest globals (describe, it, expect, jest.mock, etc.) without errors.
+    ensureJestTypesInTsConfig();
+  }
+}
+
+/**
+ * Patches tsconfig.json to add "jest" to compilerOptions.types so that
+ * TypeScript recognises jest globals (describe, it, expect, jest.mock, etc.)
+ * in generated test files without throwing TS2304 "Cannot find name 'jest'".
+ *
+ * Only modifies the file if:
+ *  - tsconfig.json exists in cwd
+ *  - compilerOptions.types is either absent or does not already include "jest"
+ */
+export function ensureJestTypesInTsConfig(): void {
+  const tsconfigPath = path.join(process.cwd(), 'tsconfig.json');
+  if (!fs.existsSync(tsconfigPath)) return;
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(tsconfigPath, 'utf8');
+  } catch {
+    return;
+  }
+
+  let tsconfig: any;
+  try {
+    // Strip single-line comments so JSON.parse doesn't choke on tsconfig's
+    // common // comment style.
+    const stripped = raw.replace(/\/\/[^\n]*/g, '');
+    tsconfig = JSON.parse(stripped);
+  } catch {
+    logger.warn('Could not parse tsconfig.json — skipping jest types injection.');
+    return;
+  }
+
+  tsconfig.compilerOptions = tsconfig.compilerOptions || {};
+  const types: string[] = tsconfig.compilerOptions.types ?? [];
+
+  if (types.includes('jest')) return; // already there
+
+  tsconfig.compilerOptions.types = [...types, 'jest'];
+
+  try {
+    fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2) + '\n', 'utf8');
+    logger.success('Added "jest" to compilerOptions.types in tsconfig.json');
+  } catch (err: any) {
+    logger.warn(`Could not update tsconfig.json: ${err.message}`);
   }
 }

@@ -26,7 +26,9 @@ const MAX_STDERR_CHARS = 2_000;
 // System prompt (fixed — never changes per call)
 // ---------------------------------------------------------------------------
 
-const getSystemPrompt = (language: string) => `You are an expert Node.js backend testing engineer.
+const getSystemPrompt = (language: string) => {
+  const isTs = language === 'typescript';
+  return `You are an expert Node.js backend testing engineer.
 
 Follow these STRICT rules WITHOUT exception:
 1. Framework: Use Jest ONLY. Use Supertest for HTTP endpoint testing.
@@ -38,8 +40,13 @@ Follow these STRICT rules WITHOUT exception:
    - At least 2 Error Case tests (4xx or 5xx)
 5. Output format: Return ONLY the raw code.
    - NO explanation text before or after the code.
-   - Wrap the ENTIRE output in exactly ONE code block: \`\`\`${language === 'typescript' ? 'typescript' : 'javascript'} ... \`\`\`
-   - Do NOT split into multiple code blocks.`;
+   - Wrap the ENTIRE output in exactly ONE code block: \`\`\`${isTs ? 'typescript' : 'javascript'} ... \`\`\`
+   - Do NOT split into multiple code blocks.${isTs ? `
+6. TypeScript ONLY: The FIRST LINE of your output MUST be:
+   /// <reference types="jest" />
+   This is required so TypeScript recognises describe, it, expect, and jest.mock without TS2304 errors.` : ''}`;
+};
+
 
 // ---------------------------------------------------------------------------
 // Public API
