@@ -6,11 +6,10 @@ import ora from 'ora';
 import { execSync } from 'child_process';
 import { logger } from './logger.js';
 
-export function isTypeScriptProject(): boolean {
-  const cwd = process.cwd();
-  if (fs.existsSync(path.join(cwd, 'tsconfig.json'))) return true;
+export function isTypeScriptProject(projectDir: string): boolean {
+  if (fs.existsSync(path.join(projectDir, 'tsconfig.json'))) return true;
   
-  const packageJsonPath = path.join(cwd, 'package.json');
+  const packageJsonPath = path.join(projectDir, 'package.json');
   if (fs.existsSync(packageJsonPath)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
@@ -23,15 +22,15 @@ export function isTypeScriptProject(): boolean {
   return false;
 }
 
-export function checkMissingDependencies(): string[] {
+export function checkMissingDependencies(projectDir: string): string[] {
   const requiredDeps = ['jest', 'supertest'];
-  if (isTypeScriptProject()) {
+  if (isTypeScriptProject(projectDir)) {
     // If it's a TS project, ts-jest is highly recommended for running Jest without Babel
     requiredDeps.push('@types/jest', '@types/supertest', 'ts-jest');
   }
   
   const missingDeps: string[] = [];
-  const packageJsonPath = path.join(process.cwd(), 'package.json');
+  const packageJsonPath = path.join(projectDir, 'package.json');
   if (!fs.existsSync(packageJsonPath)) return requiredDeps;
   
   try {
@@ -47,29 +46,30 @@ export function checkMissingDependencies(): string[] {
   return missingDeps;
 }
 
-export function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' | 'bun' {
-  const cwd = process.cwd();
-  if (fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
-  if (fs.existsSync(path.join(cwd, 'yarn.lock'))) return 'yarn';
-  if (fs.existsSync(path.join(cwd, 'bun.lockb'))) return 'bun';
+export function detectPackageManager(projectDir: string): 'npm' | 'pnpm' | 'yarn' | 'bun' {
+  if (fs.existsSync(path.join(projectDir, 'bun.lockb'))) return 'bun';
+  if (fs.existsSync(path.join(projectDir, 'bun.lock'))) return 'bun';
+  if (fs.existsSync(path.join(projectDir, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (fs.existsSync(path.join(projectDir, 'yarn.lock'))) return 'yarn';
   return 'npm';
 }
 
-export function getInstallCommand(pkgManager: 'npm' | 'pnpm' | 'yarn' | 'bun', deps: string[]): string {
+export function getInstallCommand(pkgManager: 'npm' | 'pnpm' | 'yarn' | 'bun', deps: string[], projectDir: string): string {
   const depsStr = deps.join(' ');
-  const cwd = process.cwd();
   switch (pkgManager) {
-    case 'pnpm': 
-      const isWorkspace = fs.existsSync(path.join(cwd, 'pnpm-workspace.yaml'));
+    case 'pnpm': {
+      const isWorkspace = fs.existsSync(path.join(projectDir, 'pnpm-workspace.yaml'));
       return `pnpm add -D ${isWorkspace ? '-w ' : ''}${depsStr}`;
-    case 'yarn': 
+    }
+    case 'yarn': {
       // Yarn 1.x requires -W to add to workspace root, checking for workspaces in package.json
       let isYarnWorkspace = false;
       try {
-        const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+        const pkg = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf8'));
         if (pkg.workspaces) isYarnWorkspace = true;
       } catch {}
       return `yarn add -D ${isYarnWorkspace ? '-W ' : ''}${depsStr}`;
+    }
     case 'bun': return `bun add -d ${depsStr}`;
     default: return `npm install -D ${depsStr}`;
   }
@@ -78,9 +78,11 @@ export function getInstallCommand(pkgManager: 'npm' | 'pnpm' | 'yarn' | 'bun', d
 /**
  * Checks for missing dependencies and prompts the user to automatically install them.
  * Also automatically configures jest.config.js for TypeScript projects if needed.
+ * 
+ * @param projectDir - The root directory of the TARGET project (where package.json lives).
  */
-export async function ensureDependencies(): Promise<void> {
-  const missingDeps = checkMissingDependencies();
+export async function ensureDependencies(projectDir: string): Promise<void> {
+  const missingDeps = checkMissingDependencies(projectDir);
   
   if (missingDeps.length > 0) {
     logger.blank();
@@ -90,17 +92,17 @@ export async function ensureDependencies(): Promise<void> {
     });
 
     if (shouldInstall) {
-      const pkgManager = detectPackageManager();
-      const cmd = getInstallCommand(pkgManager, missingDeps);
+      const pkgManager = detectPackageManager(projectDir);
+      const cmd = getInstallCommand(pkgManager, missingDeps, projectDir);
       const spinner = ora(`Installing dependencies using ${pkgManager}...`).start();
       
       try {
         // using stdio 'pipe' so we can capture and print the error if it fails
-        execSync(cmd, { stdio: 'pipe', cwd: process.cwd() });
+        execSync(cmd, { stdio: 'pipe', cwd: projectDir });
         spinner.succeed(`Dependencies installed successfully via ${pkgManager}!`);
         
         // Add test script if missing
-        const packageJsonPath = path.join(process.cwd(), 'package.json');
+        const packageJsonPath = path.join(projectDir, 'package.json');
         if (fs.existsSync(packageJsonPath)) {
           const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
           pkg.scripts = pkg.scripts || {};
@@ -113,7 +115,7 @@ export async function ensureDependencies(): Promise<void> {
       } catch (err: any) {
         spinner.fail(`Failed to install dependencies.`);
         logger.error(err.stderr ? err.stderr.toString() : err.message);
-        logger.hint(`You can try running \`${cmd}\` manually.`);
+        logger.hint(`You can try running \`${cmd}\` manually in ${projectDir}.`);
       }
     } else {
       logger.info('Skipping installation. Please ensure you install them later.');
@@ -121,10 +123,10 @@ export async function ensureDependencies(): Promise<void> {
   }
 
   // Generate jest config for TS if missing (even if dependencies were already installed)
-  if (isTypeScriptProject()) {
+  if (isTypeScriptProject(projectDir)) {
     let isEsm = false;
     try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+      const pkg = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf8'));
       if (pkg.type === 'module') isEsm = true;
     } catch {}
 
@@ -139,7 +141,7 @@ export async function ensureDependencies(): Promise<void> {
       'jest.config.cts',
     ];
     const existingConfig = ALL_JEST_CONFIG_NAMES.find(
-      (name) => fs.existsSync(path.join(process.cwd(), name)),
+      (name) => fs.existsSync(path.join(projectDir, name)),
     );
 
     if (existingConfig) {
@@ -150,19 +152,19 @@ export async function ensureDependencies(): Promise<void> {
       // in package.json explicitly select the primary config with --config,
       // so Jest ignores the others.
       const allExistingConfigs = ALL_JEST_CONFIG_NAMES.filter(
-        (name) => fs.existsSync(path.join(process.cwd(), name)),
+        (name) => fs.existsSync(path.join(projectDir, name)),
       );
       if (allExistingConfigs.length > 1) {
         logger.warn(
           `Multiple Jest configs detected: ${allExistingConfigs.join(', ')}. ` +
           `Updating package.json to use --config ${existingConfig} explicitly.`,
         );
-        reconcileJestTestScript(existingConfig);
+        reconcileJestTestScript(existingConfig, projectDir);
       }
 
     } else {
       const configFileName = isEsm ? 'jest.config.cjs' : 'jest.config.js';
-      const configPath = path.join(process.cwd(), configFileName);
+      const configPath = path.join(projectDir, configFileName);
 
       logger.blank();
       const shouldCreateConfig = await confirm({
@@ -189,7 +191,7 @@ module.exports = {
 
     // Ensure tsconfig.json includes jest types so TypeScript recognises
     // jest globals (describe, it, expect, jest.mock, etc.) without errors.
-    ensureJestTypesInTsConfig();
+    ensureJestTypesInTsConfig(projectDir);
   }
 }
 
@@ -199,11 +201,11 @@ module.exports = {
  * in generated test files without throwing TS2304 "Cannot find name 'jest'".
  *
  * Only modifies the file if:
- *  - tsconfig.json exists in cwd
+ *  - tsconfig.json exists in projectDir
  *  - compilerOptions.types is either absent or does not already include "jest"
  */
-export function ensureJestTypesInTsConfig(): void {
-  const tsconfigPath = path.join(process.cwd(), 'tsconfig.json');
+export function ensureJestTypesInTsConfig(projectDir: string): void {
+  const tsconfigPath = path.join(projectDir, 'tsconfig.json');
   if (!fs.existsSync(tsconfigPath)) return;
 
   let raw: string;
@@ -248,8 +250,8 @@ export function ensureJestTypesInTsConfig(): void {
  *
  * Only patches scripts.test if it starts with "jest" and doesn't already have --config.
  */
-export function reconcileJestTestScript(primaryConfigFile: string): void {
-  const pkgPath = path.join(process.cwd(), 'package.json');
+export function reconcileJestTestScript(primaryConfigFile: string, projectDir: string): void {
+  const pkgPath = path.join(projectDir, 'package.json');
   if (!fs.existsSync(pkgPath)) return;
 
   let pkg: any;

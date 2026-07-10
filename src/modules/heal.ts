@@ -50,10 +50,10 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
     logger.error('Environment Configuration Error Detected!');
     logger.warn('Jest failed to parse the test file. This usually means your project is not configured to run TypeScript or ESM tests with Jest.');
     
-    const missingDeps = checkMissingDependencies();
+    const missingDeps = checkMissingDependencies(cwd);
     if (missingDeps.length > 0) {
-      const pkgManager = detectPackageManager();
-      const cmd = getInstallCommand(pkgManager, missingDeps);
+      const pkgManager = detectPackageManager(cwd);
+      const cmd = getInstallCommand(pkgManager, missingDeps, cwd);
       logger.hint(`Missing testing dependencies detected: ${missingDeps.join(', ')}`);
       logger.hint(`Fix: Run \`${cmd}\` in your project and ensure jest.config.js is configured.`);
     } else {

@@ -11,6 +11,26 @@ import { logger } from '../utils/logger.js';
 import ora from 'ora';
 import { confirm } from '@inquirer/prompts';
 import path from 'path';
+import fs from 'fs';
+
+/**
+ * Walk up from `startDir` until we find a directory that contains a package.json.
+ * Falls back to `startDir` itself if none found at any level.
+ */
+function findProjectRoot(startDir: string): string {
+  let current = startDir;
+  while (true) {
+    if (fs.existsSync(path.join(current, 'package.json'))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      // Reached filesystem root — fall back to startDir
+      return startDir;
+    }
+    current = parent;
+  }
+}
 
 export const unitCommand = new Command('unit')
   .description('Generate unit tests for a specific file')
@@ -30,8 +50,11 @@ export const unitCommand = new Command('unit')
         throw new Error('No output directory set. Run `test-gen init` or use the `--source` flag.');
       }
       
-      // 1.5 Ensure environment is setup properly
-      await ensureDependencies();
+      // 1.5 Resolve target project root and ensure its environment is setup properly
+      const filePath = path.resolve(cwd, file);
+      const targetProjectDir = findProjectRoot(path.dirname(filePath));
+      logger.hint(`Target project root: ${targetProjectDir}`);
+      await ensureDependencies(targetProjectDir);
       
       const maxRetries = options.retries ? parseInt(options.retries, 10) : config.maxRetries;
 
@@ -39,10 +62,9 @@ export const unitCommand = new Command('unit')
       
       // 2. AST Extract & Path Resolution
       const spinner = ora('Analyzing source file...').start();
-      const filePath = path.resolve(cwd, file);
       const context = await extractContext(filePath);
       
-      const outputPath = getOutputPath(filePath, config.sourceDir, cwd);
+      const outputPath = getOutputPath(filePath, config.sourceDir, targetProjectDir);
       context.testFilePath = outputPath;
       context.relativeImportPath = getRelativeImportPath(outputPath, filePath);
       
@@ -104,7 +126,7 @@ export const unitCommand = new Command('unit')
         logger.hint(`Previous test file backed up to ${backupPath}`);
       }
 
-      // 9. Self Heal
+      // 9. Self Heal — run Jest in the TARGET project directory
       await selfHeal({
         testFilePath: outputPath,
         sourceDir: config.sourceDir,
@@ -112,7 +134,7 @@ export const unitCommand = new Command('unit')
         systemMessages: messages,
         maxRetries,
         autoHeal: options.autoHeal,
-        cwd
+        cwd: targetProjectDir,
       });
 
     } catch (err: any) {

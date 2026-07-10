@@ -177,18 +177,31 @@ function buildUserPrompt(context: ExtractedContext): string {
   }
   parts.push('');
 
-  // --- Exports section (only functions, arrows, defaults) ---
+  // --- Exports section (functions, arrows, defaults, and classes with their methods) ---
   parts.push('=== FUNCTIONS TO TEST ===');
   const testableExports = context.exports.filter(
-    e => e.type === 'function' || e.type === 'arrow' || e.type === 'default',
+    e => e.type === 'function' || e.type === 'arrow' || e.type === 'default' || e.type === 'class',
   );
   if (testableExports.length === 0) {
     parts.push('(none detected)');
   } else {
     for (const exp of testableExports) {
-      const asyncPrefix = exp.isAsync ? 'async ' : '';
-      const paramList = exp.params.join(', ');
-      parts.push(`- ${asyncPrefix}${exp.name}(${paramList}) [line ${exp.line}]`);
+      if (exp.type === 'class') {
+        parts.push(`- class ${exp.name} [line ${exp.line}]`);
+        if (exp.methods && exp.methods.length > 0) {
+          for (const method of exp.methods) {
+            const asyncPrefix = method.isAsync ? 'async ' : '';
+            const paramList = method.params.join(', ');
+            // skip constructor from test list — it's setup, not a testable unit
+            if (method.name === 'constructor') continue;
+            parts.push(`  · ${asyncPrefix}${exp.name}.${method.name}(${paramList}) [line ${method.line}]`);
+          }
+        }
+      } else {
+        const asyncPrefix = exp.isAsync ? 'async ' : '';
+        const paramList = exp.params.join(', ');
+        parts.push(`- ${asyncPrefix}${exp.name}(${paramList}) [line ${exp.line}]`);
+      }
     }
   }
   parts.push('');

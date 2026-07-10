@@ -21,6 +21,20 @@ export interface ImportedDep {
 }
 
 /**
+ * A method extracted from an exported class.
+ */
+export interface ClassMethod {
+  /** Method name */
+  name: string;
+  /** True if the method is async */
+  isAsync: boolean;
+  /** Parameter names */
+  params: string[];
+  /** Line number where it is defined */
+  line: number;
+}
+
+/**
  * An item exported from the file.
  */
 export interface ExportedItem {
@@ -34,6 +48,8 @@ export interface ExportedItem {
   params: string[];
   /** Line number where it is defined */
   line: number;
+  /** For class exports: list of public methods (populated by ast-extractor) */
+  methods?: ClassMethod[];
 }
 
 /**

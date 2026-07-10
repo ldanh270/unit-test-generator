@@ -20,8 +20,21 @@ export class ParseError extends Error {
  * 3. Joins the rest with `sourceDir` (which is typically resolved from --source or .env).
  * 4. Replaces the extension (.js -> .spec.js, .ts -> .spec.ts).
  */
-export function getOutputPath(inputPath: string, sourceDir: string, cwd: string = process.cwd()): string {
-  const relativeInputPath = path.relative(cwd, inputPath);
+/**
+ * Calculates the output path for the test file.
+ * 
+ * Logic:
+ * 1. Takes the relative path of the input file from projectDir.
+ * 2. Strips the root segment up to and including 'src', or just the first segment if 'src' doesn't exist.
+ * 3. Joins the rest with `sourceDir` (which is resolved relative to projectDir).
+ * 4. Replaces the extension (.js -> .spec.js, .ts -> .spec.ts).
+ *
+ * @param inputPath    Absolute path to the source file being tested.
+ * @param sourceDir    Test output directory (relative or absolute). If relative, resolved from projectDir.
+ * @param projectDir   Root directory of the target project.
+ */
+export function getOutputPath(inputPath: string, sourceDir: string, projectDir: string): string {
+  const relativeInputPath = path.relative(projectDir, inputPath);
   
   // Split path into segments using the OS-specific separator
   const segments = relativeInputPath.split(path.sep);
@@ -51,7 +64,12 @@ export function getOutputPath(inputPath: string, sourceDir: string, cwd: string 
      newExt = '.spec.js'; // fallback
   }
 
-  const outputPath = path.join(cwd, sourceDir, parsedPath.dir, parsedPath.name + newExt);
+  // Resolve sourceDir relative to projectDir if it's not absolute
+  const resolvedSourceDir = path.isAbsolute(sourceDir)
+    ? sourceDir
+    : path.join(projectDir, sourceDir);
+
+  const outputPath = path.join(resolvedSourceDir, parsedPath.dir, parsedPath.name + newExt);
   
   return outputPath;
 }
@@ -74,8 +92,9 @@ export async function backupIfExists(outputPath: string): Promise<string | null>
   // Format: 2026-07-05T08-14-00 (strip milliseconds and trailing Z)
   const timestamp = date.toISOString().replace(/\.\d{3}Z$/, '').replace(/[:.]/g, '-');
   
-  // Create backup filename, e.g. user.controller.spec.2026-07-05T08-14-00.bak.js
-  const backupFilename = `${parsedPath.name}.${timestamp}.bak${parsedPath.ext}`;
+  // Create backup filename WITHOUT source extension so Jest/TS don't try to compile it
+  // e.g. holiday.service.spec.2026-07-10T08-14-00.bak  (not .bak.ts)
+  const backupFilename = `${parsedPath.name}.${timestamp}.bak`;
   // parsedPath.dir may be empty string for root-level files, so use path.dirname(outputPath)
   const backupPath = path.join(path.dirname(outputPath), backupFilename);
   
@@ -118,9 +137,13 @@ export async function writeErrorLog(
   sourceDir: string, 
   filename: string, 
   content: string, 
-  cwd: string = process.cwd()
+  projectDir: string
 ): Promise<string> {
-  const errorDir = path.join(cwd, sourceDir, '.test-gen-errors');
+  // Resolve sourceDir relative to projectDir if not absolute
+  const resolvedSourceDir = path.isAbsolute(sourceDir)
+    ? sourceDir
+    : path.join(projectDir, sourceDir);
+  const errorDir = path.join(resolvedSourceDir, '.test-gen-errors');
   await fs.mkdir(errorDir, { recursive: true });
   
   const date = new Date();

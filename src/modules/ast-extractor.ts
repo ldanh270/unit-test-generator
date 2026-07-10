@@ -6,6 +6,7 @@ import * as t from '@babel/types';
 import {
   ExtractedContext,
   ExportedItem,
+  ClassMethod,
   ImportedDep,
   RouteEndpoint,
   DepCategory,
@@ -141,6 +142,36 @@ function extractImports(ast: t.File): ImportedDep[] {
 /**
  * Extracts all exported functions, classes, and variables from the AST.
  */
+/**
+ * Extracts all public (non-private) methods from a ClassDeclaration node.
+ */
+function extractClassMethods(classDecl: t.ClassDeclaration): ClassMethod[] {
+  const methods: ClassMethod[] = [];
+  for (const member of classDecl.body.body) {
+    if (
+      t.isClassMethod(member) &&
+      !member.static &&
+      member.accessibility !== 'private' &&
+      t.isIdentifier(member.key)
+    ) {
+      methods.push({
+        name: member.key.name,
+        isAsync: member.async === true,
+        params: member.params.map((p) => {
+          if (t.isIdentifier(p)) return p.name;
+          if (t.isAssignmentPattern(p) && t.isIdentifier(p.left)) return p.left.name;
+          if (t.isRestElement(p) && t.isIdentifier(p.argument)) return `...${p.argument.name}`;
+          // TSParameterProperty (e.g. constructor(private repo: IRepo))
+          if (t.isTSParameterProperty(p) && t.isIdentifier(p.parameter)) return p.parameter.name;
+          return 'unknown';
+        }),
+        line: member.loc?.start.line ?? 0,
+      });
+    }
+  }
+  return methods;
+}
+
 function extractExports(ast: t.File): ExportedItem[] {
   const exportsList: ExportedItem[] = [];
 
@@ -206,6 +237,7 @@ function extractExports(ast: t.File): ExportedItem[] {
           isAsync: false,
           params: [],
           line,
+          methods: extractClassMethods(decl),
         });
       }
     },
