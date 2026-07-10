@@ -1,6 +1,6 @@
 {
   "name": "@ldanh270/aatest",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "aatest - Auto AI Test Generator with AI-powered unit test generator with self-healing capabilities for Express.js",
   "author": "ldanh270",
   "license": "MIT",
