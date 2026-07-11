@@ -53,12 +53,12 @@ export function parseMaxRetries(
 export function loadConfig(cliSourceOverride?: string): TestGenConfig {
   const apiKey = process.env.TEST_GEN_API_KEY || process.env.AATEST_API_KEY;
   if (!apiKey) {
-    throw new Error('TEST_GEN_API_KEY (or AATEST_API_KEY) is not set. Please run `test-gen init` first.');
+    throw new Error('TEST_GEN_API_KEY (or AATEST_API_KEY) is not set. Please run `aatest init` first.');
   }
 
   const model = process.env.TEST_GEN_MODEL || process.env.AATEST_MODEL;
   if (!model) {
-    throw new Error('TEST_GEN_MODEL (or AATEST_MODEL) is not set. Please run `test-gen init` first.');
+    throw new Error('TEST_GEN_MODEL (or AATEST_MODEL) is not set. Please run `aatest init` first.');
   }
 
   // Fallback to OpenAI's default base URL if a proxy or alternative endpoint is not provided

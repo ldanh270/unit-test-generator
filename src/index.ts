@@ -8,6 +8,7 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { unitCommand } from './commands/unit.js';
+import packageJson from '../package.json';
 
 /**
  * Initialize the root Command instance
@@ -15,9 +16,9 @@ import { unitCommand } from './commands/unit.js';
 const program = new Command();
 
 program
-  .name('test-gen')
-  .description('AI-powered unit test generator for Express.js')
-  .version('0.1.0');
+  .name('aatest')
+  .description('AI-powered Jest test generator for Node.js')
+  .version(packageJson.version);
 
 // Mount the initialization wizard
 program.addCommand(initCommand);

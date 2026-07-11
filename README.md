@@ -1,110 +1,204 @@
 # aatest
 
-> AI-powered unit test generator with AST-based context extraction and self-healing for Node.js.
-
 [![npm version](https://img.shields.io/npm/v/@ldanh270/aatest.svg?style=flat-square)](https://www.npmjs.com/package/@ldanh270/aatest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/node/v/@ldanh270/aatest.svg?style=flat-square)](https://www.npmjs.com/package/@ldanh270/aatest)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
 
-`aatest` is a CLI tool designed to eliminate the boilerplate of writing unit tests. By analyzing your Abstract Syntax Tree (AST), it understands your code's context and leverages Large Language Models (LLMs) to automatically generate, validate, and fix unit tests.
+Generate, validate, and repair Jest tests for JavaScript and TypeScript Node.js
+projects from the command line.
 
-## Features
+`aatest` reads a source file with Babel AST analysis, sends structured context
+to an OpenAI-compatible Chat Completions endpoint, writes the generated test,
+and validates it in the target project. When healing is enabled, each failure
+is diagnosed before the model rewrites the test.
 
-* **Zero-config setup** — Interactive CLI wizard to get you started immediately.
-* **AST Context Parsing** — Accurately detects exports, internal dependencies, and functions.
-* **Diagnostic Self-Healing** — Normalizes TypeScript/Jest ambient types, runs file-scoped lint (or project typecheck), analyzes the root cause, and feeds only diagnostics relevant to the generated test back to the AI.
-* **LLM Agnostic** — Bring your own API key (OpenAI, Anthropic, OpenRouter).
-* **Safe Mode** — Generates and backs up files automatically without overwriting your existing code.
+## Highlights
 
-## Getting Started
+- JavaScript and TypeScript source analysis
+- Export, import, class-method, and Express-route context extraction
+- OpenAI-compatible providers, including local 9Router instances
+- Safe replacement with timestamped backups
+- Lint-first validation followed by isolated Jest execution
+- Root-cause analysis before every repair
+- Early exit as soon as validation passes
+- npm, pnpm, Yarn, and Bun project detection
 
-You can run `aatest` without installing it globally, using `npx`.
+## Requirements
 
-### 1. Initialize Configuration
+- Node.js 18 or newer
+- A target Node.js package containing `package.json`
+- An OpenAI-compatible Chat Completions endpoint, API key, and model ID
+- Jest-compatible source code; Express/Supertest projects are the primary use case
 
-Set up your workspace and LLM provider settings:
+## Security first
 
-```bash
-npx @ldanh270/aatest init
-```
+`aatest` sends source code and failure diagnostics to the provider configured in
+your environment. It also executes generated code with Jest inside your target
+project. Review provider privacy terms, use a restricted test environment, and
+never commit API keys. See [Security](SECURITY.md) before using the CLI on
+sensitive code.
 
-This will create a `.env` file in your root directory containing your API keys and output preferences.
+## Quick start
 
-### 2. Generate Tests
-
-To generate tests for a specific file:
-
-```bash
-npx @ldanh270/aatest unit src/controllers/user.js
-```
-
-### 3. Generate with Auto-Heal
-
-To let `aatest` automatically attempt to fix tests if they fail assertions:
-
-```bash
-npx @ldanh270/aatest unit src/controllers/user.js --auto-heal --retries 10
-```
-
-Validation runs in this order: local ESLint/Biome, the project's `lint` script,
-the project's `typecheck` script, then Jest. Project-wide static errors that do
-not reference the generated test file are reported but excluded from healing.
-
-## Installation (Optional)
-
-If you prefer to install it as a development dependency in your project:
+Run these commands from the package that owns the source file:
 
 ```bash
-npm install -D @ldanh270/aatest
-```
-You can then add it to your `package.json` scripts:
-```json
-{
-  "scripts": {
-    "test:gen": "aatest unit"
-  }
-}
+cd path/to/your-node-project
+npm install --save-dev @ldanh270/aatest
+npx aatest init
 ```
 
-## CLI Reference
+Generate a test:
 
-### `init`
-Starts the interactive setup wizard.
+```bash
+npx aatest unit src/controllers/user.controller.ts
+```
 
-### `unit <file>`
-Generates a unit test for the provided file path.
+Generate and automatically repair failures, up to ten repair attempts:
 
-**Options:**
-* `-s, --source <dir>`: Override the default output directory.
-* `-H, --auto-heal`: Automatically run tests and attempt to fix failures.
-* `-r, --retries <n>`: Maximum number of self-healing retries (default: 10).
-* `--dry-run`: Output the generated code to the console without saving it.
-* `-v, --verbose`: Enable verbose logging for debugging.
+```bash
+npx aatest unit src/controllers/user.controller.ts --auto-heal --retries 10
+```
 
-## Configuration
+Preview the prompt and model response without writing the generated test:
 
-`aatest` reads from a `.env` file in your project root. These values are automatically populated by the `init` command:
+```bash
+npx aatest unit src/controllers/user.controller.ts --dry-run --verbose
+```
+
+> `--dry-run` prevents test-file writes and validation, but environment and
+> dependency checks happen first. Confirm prompts carefully because setup may
+> install test dependencies or update project test configuration.
+
+## Use with 9Router
+
+[9Router](https://github.com/decolua/9router#readme) exposes a local
+OpenAI-compatible endpoint that can route requests across connected providers.
+
+```bash
+npm install --global 9router
+9router
+```
+
+In the dashboard at `http://localhost:20128`:
+
+1. Open **Providers** and connect a provider.
+2. Copy the API key displayed by 9Router.
+3. Copy a model ID from the dashboard, for example
+   `kr/claude-sonnet-4.5` when available.
+4. Configure `aatest` with:
 
 ```env
-TEST_GEN_BASE_URL=https://api.openai.com/v1
-TEST_GEN_API_KEY=your_api_key
-TEST_GEN_MODEL=gpt-4o
+TEST_GEN_BASE_URL=http://localhost:20128/v1
+TEST_GEN_API_KEY=your_9router_dashboard_key
+TEST_GEN_MODEL=kr/claude-sonnet-4.5
 TEST_GEN_SOURCE=./src/__tests__
 TEST_GEN_MAX_RETRIES=10
 ```
 
-The CLI reads `.env` (then `.env.test-gen` as a fallback) from the directory
-where you invoke `aatest`. Legacy `AATEST_*` names are also accepted.
+Keep 9Router running while `aatest` generates or repairs tests. See
+[Provider setup](docs/providers.md) for the complete walkthrough and generic
+OpenAI-compatible configuration.
+
+## Configuration
+
+`aatest init` writes configuration to `.env` in the directory where it is run.
+If `.env` already exists and you choose not to append, it writes
+`.env.test-gen` instead.
+
+| Variable | Required | Default | Purpose |
+|---|---:|---|---|
+| `TEST_GEN_API_KEY` | Yes | — | Provider or proxy API key |
+| `TEST_GEN_BASE_URL` | No | `https://api.openai.com/v1` | OpenAI-compatible API root |
+| `TEST_GEN_MODEL` | Yes | — | Provider-specific model ID |
+| `TEST_GEN_SOURCE` | Yes* | — | Generated-test output directory |
+| `TEST_GEN_MAX_RETRIES` | No | `10` | Maximum repair attempts |
+
+\* `--source` can supply the output directory for one invocation.
+
+Legacy aliases are supported: `AATEST_API_KEY`, `AATEST_BASE_URL`,
+`AATEST_MODEL`, `AATEST_SOURCE_DIR`, and `AATEST_MAX_RETRIES`.
+
+Precedence is CLI option, canonical `TEST_GEN_*` variable, legacy `AATEST_*`
+variable, then built-in default. `.env` is loaded first; `.env.test-gen` fills
+only values that are still missing. See [Configuration](docs/configuration.md).
+
+## CLI
+
+```text
+aatest init
+aatest unit <file> [options]
+```
+
+| Option | Description |
+|---|---|
+| `-s, --source <dir>` | Override the generated-test directory |
+| `-H, --auto-heal` | Repair failures without asking for confirmation |
+| `-r, --retries <n>` | Set a positive maximum number of repair attempts |
+| `--dry-run` | Print prompts and model output without writing the test |
+| `-v, --verbose` | Print token usage and stack traces |
+
+`--auto-heal` does not enable validation—validation always runs after a test is
+written. It only skips the repair confirmation prompt after a failure. See the
+[CLI reference](docs/cli-reference.md).
+
+## Output and backups
+
+With this configuration:
+
+```env
+TEST_GEN_SOURCE=./src/__tests__
+```
+
+this source file:
+
+```text
+src/controllers/user.controller.ts
+```
+
+produces:
+
+```text
+src/__tests__/controllers/user.controller.spec.ts
+```
+
+If the test already exists, it is copied to a timestamped `.bak` file before
+being replaced. Failed healing logs are written under
+`<sourceDir>/.test-gen-errors/`.
+
+## Validation and self-healing
+
+After generation, `aatest`:
+
+1. Runs the first available static check: local ESLint, local Biome, the
+   package `lint` script, or the package `typecheck` script.
+2. Ignores project-wide static failures only when they do not reference the
+   generated test.
+3. Runs the generated file with Jest in-band and a 60-second timeout.
+4. Stops immediately when validation passes.
+5. On failure, asks the model for a root-cause analysis and then a complete
+   corrected test file.
+
+Each failed repair attempt can make two model calls: one diagnosis and one
+rewrite. See [Self-healing](docs/self-healing.md) for limits and failure modes.
+
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [Provider setup](docs/providers.md)
+- [Configuration](docs/configuration.md)
+- [CLI reference](docs/cli-reference.md)
+- [Self-healing](docs/self-healing.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Local development](docs/local-development.md)
+- [Architecture](docs/system-architecture.md)
+- [Documentation index](docs/README.md)
 
 ## Contributing
 
-Contributions, issues and feature requests are welcome!
-
-1. Fork the repository.
-2. Create your feature branch (`git checkout -b feature/fooBar`).
-3. Commit your changes (`git commit -am 'Add some fooBar'`).
-4. Push to the branch (`git push origin feature/fooBar`).
-5. Create a new Pull Request.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and coding
+standards. Bug reports and focused pull requests are welcome.
 
 ## License
 
-[MIT](LICENSE)
+Licensed under the [Apache License 2.0](LICENSE).

@@ -47,7 +47,7 @@ export const unitCommand = new Command('unit')
       // 1. Load config
       const config = loadConfig(options.source);
       if (!config.sourceDir) {
-        throw new Error('No output directory set. Run `test-gen init` or use the `--source` flag.');
+        throw new Error('No output directory set. Run `aatest init` or use the `--source` flag.');
       }
       
       // 1.5 Resolve target project root and ensure its environment is setup properly

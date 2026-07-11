@@ -60,7 +60,7 @@ export class EnvWriter {
     const envContent = this.formatEnvContent(config);
 
     if (appendToExisting) {
-      await fs.appendFile(this.defaultEnvPath, `\n\n# test-gen Configuration\n${envContent}\n`);
+      await fs.appendFile(this.defaultEnvPath, `\n\n# aatest Configuration\n${envContent}\n`);
       return this.defaultEnvPath;
     }
 

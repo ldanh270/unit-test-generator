@@ -107,7 +107,7 @@ export class LLMClient {
     }
 
     if (status === 400 || status === 413) {
-      throw new Error('Context too large. Try a smaller file or --truncate flag');
+      throw new Error('Context too large. Try generating tests for a smaller source file.');
     }
 
     if (status === 429) {

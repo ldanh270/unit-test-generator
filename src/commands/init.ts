@@ -22,9 +22,9 @@ import { ensureDependencies } from '../utils/dependency-checker.js';
  * and writes the preferences to a .env file.
  */
 export const initCommand = new Command('init')
-  .description('Initialize configuration for test-gen')
+  .description('Initialize configuration for aatest')
   .action(async () => {
-    logger.header('test-gen', 'v0.1.0');
+    logger.header('aatest', 'Configuration');
     logger.hint('Interactive configuration wizard\n');
 
     try {
@@ -80,7 +80,7 @@ export const initCommand = new Command('init')
       await ensureDependencies(process.cwd());
 
       logger.blank();
-      logger.nextSteps(['test-gen unit <path-to-file.js>']);
+      logger.nextSteps(['aatest unit <path-to-file.js>']);
       
     } catch (error: any) {
       // Graceful handling for user cancellations via Ctrl+C during prompts
