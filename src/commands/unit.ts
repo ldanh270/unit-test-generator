@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { loadConfig } from '../config.js';
+import { loadConfig, parseMaxRetries } from '../config.js';
 import { extractContext } from '../modules/ast-extractor.js';
 import { getRelativeImportPath } from '../modules/path-resolver.js';
 import { ensureDependencies } from '../utils/dependency-checker.js';
@@ -56,7 +56,11 @@ export const unitCommand = new Command('unit')
       logger.hint(`Target project root: ${targetProjectDir}`);
       await ensureDependencies(targetProjectDir);
       
-      const maxRetries = options.retries ? parseInt(options.retries, 10) : config.maxRetries;
+      const maxRetries = options.retries === undefined
+        ? config.maxRetries
+        : parseMaxRetries(options.retries, '--retries');
+      const maxRetriesSource = options.retries === undefined ? config.maxRetriesSource : '--retries';
+      logger.hint(`Self-healing retries: ${maxRetries} (from ${maxRetriesSource})`);
 
       logger.header('Test-Gen', 'Generating Unit Tests');
       

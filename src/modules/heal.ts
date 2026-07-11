@@ -1,9 +1,17 @@
 import { confirm } from '@inquirer/prompts';
 import fs from 'fs/promises';
 import path from 'path';
-import { runJest } from './test-runner.js';
+import {
+  formatRunOutput,
+  validateTestFile,
+  ValidationResult,
+} from './test-runner.js';
 import { LLMClient } from '../llm/client.js';
-import { buildFixPrompt } from './prompt-builder.js';
+import {
+  buildAnalyzePrompt,
+  buildFixPrompt,
+  RepairLanguage,
+} from './prompt-builder.js';
 import { extractCodeBlock, writeErrorLog, ParseError } from './file-writer.js';
 import { logger } from '../utils/logger.js';
 import { ChatMessage } from '../types/llm.js';
@@ -19,37 +27,71 @@ export interface SelfHealOptions {
   cwd: string;
 }
 
-/**
- * Runs the self-healing loop for a generated test file.
- */
-export async function selfHeal(options: SelfHealOptions): Promise<void> {
-  const { testFilePath, sourceDir, llmClient, systemMessages, maxRetries, autoHeal, cwd } = options;
+type TestValidator = (testFilePath: string, cwd: string) => Promise<ValidationResult>;
 
-  let result = await runJest(testFilePath, cwd);
+export interface SelfHealDependencies {
+  validate?: TestValidator;
+}
+
+function repairLanguage(testFilePath: string): RepairLanguage {
+  return /\.(?:ts|tsx)$/i.test(testFilePath) ? 'typescript' : 'javascript';
+}
+
+function diagnosticName(result: ValidationResult): string {
+  if (result.source === 'lint') return 'Lint';
+  if (result.source === 'parse') return 'LLM response parsing';
+  return 'Jest';
+}
+
+function ensureTypeScriptJestReference(code: string, testFilePath: string): string {
+  if (!/\.(?:ts|tsx)$/i.test(testFilePath)) return code;
+  if (code.startsWith('/// <reference types="jest" />')) return code;
+  return `/// <reference types="jest" />\n${code}`;
+}
+
+/**
+ * Runs the generated file through lint -> Jest, diagnoses each failure, then
+ * asks the LLM for a repair. The validation output from one attempt becomes
+ * the diagnostic input for the next attempt.
+ */
+export async function selfHeal(
+  options: SelfHealOptions,
+  dependencies: SelfHealDependencies = {},
+): Promise<void> {
+  const { testFilePath, sourceDir, llmClient, systemMessages, maxRetries, autoHeal, cwd } = options;
+  const validate = dependencies.validate ?? validateTestFile;
+
+  let result = await validate(testFilePath, cwd);
+  if (result.lintSkipped) {
+    logger.warn('No local ESLint/Biome binary or package.json lint script found; lint validation was skipped.');
+  }
+
   if (result.passed) {
-    logger.success(`Tests passed successfully for ${testFilePath}`);
+    const validationSummary = result.lintSkipped ? 'Tests passed (lint unavailable)' : 'Lint and tests passed';
+    logger.success(`${validationSummary} for ${testFilePath}`);
     return;
   }
 
-  logger.error(`Tests failed for ${testFilePath}`);
-  const errorOutput = result.stderr || result.stdout || '';
-  
-  // Print a snippet of the error for the user to see
-  console.log('\n' + errorOutput.slice(0, 1000) + '\n...');
+  logger.error(`${diagnosticName(result)} validation failed for ${testFilePath}`);
+  const initialErrorOutput = formatRunOutput(result);
 
-  // Fast-fail check for environment configuration errors
-  const isEnvError = 
-    errorOutput.includes('Jest encountered an unexpected token') ||
-    errorOutput.includes('Jest failed to parse a file') ||
-    errorOutput.includes('Cannot use import statement outside a module') ||
-    errorOutput.includes('is not recognized as an internal or external command') ||
-    errorOutput.includes('module is not defined in ES module scope') ||
-    errorOutput.includes('command not found');
+  // Print a snippet of the error for the user to see.
+  console.log('\n' + initialErrorOutput.slice(0, 1000) + '\n...');
+
+  // These failures require project configuration changes rather than generated-code repairs.
+  const isEnvError = result.source === 'jest' && (
+    initialErrorOutput.includes('Jest encountered an unexpected token') ||
+    initialErrorOutput.includes('Jest failed to parse a file') ||
+    initialErrorOutput.includes('Cannot use import statement outside a module') ||
+    initialErrorOutput.includes('is not recognized as an internal or external command') ||
+    initialErrorOutput.includes('module is not defined in ES module scope') ||
+    initialErrorOutput.includes('command not found')
+  );
 
   if (isEnvError) {
     logger.error('Environment Configuration Error Detected!');
     logger.warn('Jest failed to parse the test file. This usually means your project is not configured to run TypeScript or ESM tests with Jest.');
-    
+
     const missingDeps = checkMissingDependencies(cwd);
     if (missingDeps.length > 0) {
       const pkgManager = detectPackageManager(cwd);
@@ -59,14 +101,12 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
     } else {
       logger.hint('Fix: Please ensure your jest.config.js is correctly configured for your project.');
     }
-    
+
     logger.info('Self-healing skipped (LLM cannot fix your project environment).');
     process.exit(1);
   }
 
-  const isNoTestsFound = errorOutput.includes('No tests found');
-
-  if (isNoTestsFound) {
+  if (result.source === 'jest' && initialErrorOutput.includes('No tests found')) {
     logger.error('Jest Configuration Error Detected!');
     logger.warn('Jest could not find the generated test file (No tests found).');
     logger.hint('This usually means the generated file path does not match your Jest "testMatch" or "testRegex" configuration.');
@@ -77,7 +117,7 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
 
   if (!autoHeal) {
     const shouldHeal = await confirm({
-      message: 'Tests failed. Do you want to auto-fix? (Tip: use --auto-heal to skip this prompt)',
+      message: 'Validation failed. Do you want to auto-fix? (Tip: use --auto-heal to skip this prompt)',
       default: true,
     });
 
@@ -95,77 +135,88 @@ export async function selfHeal(options: SelfHealOptions): Promise<void> {
     let faultyCode = '';
     try {
       faultyCode = await fs.readFile(testFilePath, 'utf-8');
-    } catch (e) {
-      logger.error(`Could not read test file for healing: ${String(e)}`);
+    } catch (error) {
+      logger.error(`Could not read test file for healing: ${String(error)}`);
       process.exit(1);
     }
 
-    let stderrStr = result.stderr || result.stdout || 'Unknown error';
+    const diagnostics = formatRunOutput(result);
 
-    // Construct the conversation for the LLM
+    let rootCause = '';
+    try {
+      rootCause = await llmClient.complete(
+        buildAnalyzePrompt(faultyCode, diagnostics, result.source, attempt, maxRetries),
+      );
+    } catch (error) {
+      logger.error(`LLM API failed during root-cause analysis: ${String(error)}`);
+      process.exit(1);
+    }
+
+    rootCause = rootCause.trim().slice(0, 2_000) || 'The analyzer returned no diagnosis; use the diagnostics directly.';
+    logger.info(`Root-cause analysis (${diagnosticName(result)}):`);
+    logger.hint(rootCause);
+
     const conversation: ChatMessage[] = [...systemMessages];
-    
-    // We add the faulty code as if the assistant just outputted it
     conversation.push({ role: 'assistant', content: faultyCode });
-    // And add the fix prompt
-    conversation.push(buildFixPrompt(faultyCode, stderrStr, attempt, maxRetries));
+    conversation.push(buildFixPrompt(faultyCode, diagnostics, attempt, maxRetries, {
+      diagnosticSource: result.source,
+      rootCause,
+      language: repairLanguage(testFilePath),
+    }));
 
     let llmResponse = '';
     try {
       llmResponse = await llmClient.complete(conversation);
-    } catch (err) {
-      logger.error(`LLM API failed during healing: ${String(err)}`);
-      process.exit(1); 
+    } catch (error) {
+      logger.error(`LLM API failed during healing: ${String(error)}`);
+      process.exit(1);
     }
 
     let fixedCode = '';
     try {
-      fixedCode = extractCodeBlock(llmResponse);
-    } catch (err) {
-      if (err instanceof ParseError) {
+      fixedCode = ensureTypeScriptJestReference(extractCodeBlock(llmResponse), testFilePath);
+    } catch (error) {
+      if (error instanceof ParseError) {
         logger.warn('LLM failed to output a valid code block.');
         const errorPath = await writeErrorLog(
           sourceDir,
           path.basename(testFilePath),
-          `LLM Response Parse Error\n\nRaw Response:\n${err.rawResponse}`,
-          cwd
+          `LLM Response Parse Error\n\nRaw Response:\n${error.rawResponse}`,
+          cwd,
         );
         logger.hint(`Raw LLM response logged to: ${errorPath}`);
-        
-        // Force a specific error message for the next iteration so the LLM fixes its formatting
+
         result = {
           passed: false,
           stdout: '',
-          stderr: 'ParseError: You forgot the code fence markers (```javascript ... ```). Please wrap your output in code fences.',
+          stderr: 'ParseError: You forgot the code fence markers. Wrap the complete file in exactly one code block.',
           exitCode: 1,
+          source: 'parse',
+          lintSkipped: result.lintSkipped,
         };
         continue;
-      } else {
-        throw err;
       }
+      throw error;
     }
 
-    // Overwrite the file with fixed code
     await fs.writeFile(testFilePath, fixedCode, 'utf-8');
-    logger.info('File updated with potential fix. Re-running tests...');
+    logger.info('File updated with potential fix. Running lint, then Jest...');
 
-    // Run Jest again
-    result = await runJest(testFilePath, cwd);
+    result = await validate(testFilePath, cwd);
     if (result.passed) {
       logger.success(`Self-healing successful on attempt ${attempt}!`);
       return;
     }
 
-    logger.warn(`Self-healing attempt ${attempt} failed.`);
+    logger.warn(`Self-healing attempt ${attempt} failed ${diagnosticName(result)} validation.`);
   }
 
-  // Exhausted all retries
   logger.error('Exhausted all self-healing retries. The test is still failing.');
   const errorPath = await writeErrorLog(
     sourceDir,
     path.basename(testFilePath),
-    `Self-Heal Failed after ${maxRetries} retries.\n\nFinal stderr:\n${result.stderr || result.stdout}\n\nFaulty Code:\n${await fs.readFile(testFilePath, 'utf-8')}`,
-    cwd
+    `Self-Heal Failed after ${maxRetries} retries.\n\nFinal ${diagnosticName(result)} output:\n${formatRunOutput(result)}\n\nFaulty Code:\n${await fs.readFile(testFilePath, 'utf-8')}`,
+    cwd,
   );
   logger.info(`Detailed error log saved to: ${errorPath}`);
   process.exit(1);

@@ -81,12 +81,15 @@ Generates a unit test for the provided file path.
 `aatest` reads from a `.env` file in your project root. These values are automatically populated by the `init` command:
 
 ```env
-AATEST_BASE_URL=https://api.openai.com/v1
-AATEST_API_KEY=your_api_key
-AATEST_MODEL=gpt-4o
-AATEST_SOURCE_DIR=./src/__tests__
-AATEST_MAX_RETRIES=3
+TEST_GEN_BASE_URL=https://api.openai.com/v1
+TEST_GEN_API_KEY=your_api_key
+TEST_GEN_MODEL=gpt-4o
+TEST_GEN_SOURCE=./src/__tests__
+TEST_GEN_MAX_RETRIES=3
 ```
+
+The CLI reads `.env` (then `.env.test-gen` as a fallback) from the directory
+where you invoke `aatest`. Legacy `AATEST_*` names are also accepted.
 
 ## Contributing
 

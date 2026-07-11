@@ -77,7 +77,7 @@ export const initCommand = new Command('init')
       }
 
       // 5. Check and install missing testing dependencies
-      await ensureDependencies();
+      await ensureDependencies(process.cwd());
 
       logger.blank();
       logger.nextSteps(['test-gen unit <path-to-file.js>']);

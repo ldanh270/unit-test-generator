@@ -8,6 +8,27 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;
+  skipped?: boolean;
+  command?: string;
+}
+
+export type DiagnosticSource = 'lint' | 'jest' | 'parse';
+
+export interface ValidationResult extends RunResult {
+  source: DiagnosticSource;
+  lintSkipped: boolean;
+}
+
+export interface CommandSpec {
+  command: string;
+  args: string[];
+}
+
+type TestRunner = (testFilePath: string, cwd: string) => Promise<RunResult>;
+
+export interface ValidationRunners {
+  runLint?: TestRunner;
+  runJest?: TestRunner;
 }
 
 /** All Jest config file names Jest will auto-detect (in priority order). */
@@ -18,6 +39,8 @@ const JEST_CONFIG_NAMES = [
   'jest.config.ts',
   'jest.config.cts',
 ];
+
+const PROCESS_TIMEOUT_MS = 60_000;
 
 /**
  * Returns --config <file> args if a jest config exists in projectDir.
@@ -33,60 +56,94 @@ function detectJestConfigArgs(projectDir: string): string[] {
 
   let chosen = existing[0];
 
-  // In an ESM project, jest.config.js uses module.exports which fails.
-  // Prefer .cjs or .cts variants when available.
   let isEsm = false;
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf8'));
     if (pkg.type === 'module') isEsm = true;
-  } catch { /* ignore */ }
+  } catch {
+    // Ignore malformed/missing package.json and use Jest's normal priority.
+  }
 
   if (isEsm) {
-    const cjsPreferred = existing.find((n) => n.endsWith('.cjs') || n.endsWith('.cts'));
+    const cjsPreferred = existing.find((name) => name.endsWith('.cjs') || name.endsWith('.cts'));
     if (cjsPreferred) chosen = cjsPreferred;
   }
 
-  // Always pass --config explicitly to avoid the "Multiple configurations" error
   return ['--config', path.join(projectDir, chosen)];
 }
 
+function localBinary(projectDir: string, name: string): string | undefined {
+  const basePath = path.join(projectDir, 'node_modules', '.bin', name);
+  const commandPath = process.platform === 'win32' ? `${basePath}.cmd` : basePath;
+  return fs.existsSync(commandPath) ? commandPath : undefined;
+}
+
+function readPackageJson(projectDir: string): Record<string, any> | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+function detectPackageManager(projectDir: string): 'npm' | 'pnpm' | 'yarn' | 'bun' {
+  if (fs.existsSync(path.join(projectDir, 'bun.lockb')) || fs.existsSync(path.join(projectDir, 'bun.lock'))) {
+    return 'bun';
+  }
+  if (fs.existsSync(path.join(projectDir, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (fs.existsSync(path.join(projectDir, 'yarn.lock'))) return 'yarn';
+  return 'npm';
+}
+
 /**
- * Runs Jest on a specific test file.
- * Uses child_process.spawn with a 60s timeout to prevent hanging.
- * 
- * @param testFilePath The path to the test file to run.
- * @param cwd The project directory from which to run Jest.
- * @returns A promise resolving to a RunResult.
+ * Resolves the target project's lint command without downloading new tools.
+ * A local file-aware linter is preferred; package scripts are the fallback.
  */
-export async function runJest(testFilePath: string, cwd: string = process.cwd()): Promise<RunResult> {
+export function resolveLintCommand(testFilePath: string, projectDir: string): CommandSpec | null {
+  const relativeTestPath = path.relative(projectDir, testFilePath) || path.basename(testFilePath);
+
+  const eslint = localBinary(projectDir, 'eslint');
+  if (eslint) {
+    return { command: eslint, args: [relativeTestPath] };
+  }
+
+  const biome = localBinary(projectDir, 'biome');
+  if (biome) {
+    return { command: biome, args: ['check', relativeTestPath] };
+  }
+
+  const pkg = readPackageJson(projectDir);
+  if (!pkg?.scripts?.lint) return null;
+
+  const packageManager = detectPackageManager(projectDir);
+  const executable = process.platform === 'win32' ? `${packageManager}.cmd` : packageManager;
+
+  // Run the project's script exactly as declared. Appending a file breaks valid
+  // scripts such as `tsc --noEmit`; direct ESLint/Biome paths above stay file-scoped.
+  return { command: executable, args: ['run', 'lint'] };
+}
+
+function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  timeoutMessage: string,
+): Promise<RunResult> {
   return new Promise((resolve) => {
-    const configArgs = detectJestConfigArgs(cwd);
-
-    let command = 'npx';
-    let args = ['jest', testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
-
-    // Check if Jest exists locally in node_modules
-    const localJestPath = path.join(cwd, 'node_modules', '.bin', 'jest');
-    const localJestCmdPath = localJestPath + '.cmd';
-
-    if (process.platform === 'win32' && fs.existsSync(localJestCmdPath)) {
-      command = localJestCmdPath;
-      args = [testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
-    } else if (fs.existsSync(localJestPath)) {
-      command = localJestPath;
-      args = [testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
-    } else {
-      logger.warn('Jest not found in node_modules/.bin/jest, running with npx jest (slower)');
-      // On Windows, npx needs to be npx.cmd
-      if (process.platform === 'win32') {
-        command = 'npx.cmd';
-      }
-    }
-
-    const child = spawn(command, args, { cwd, shell: process.platform === 'win32' });
+    const child = spawn(command, args, {
+      cwd,
+      shell: process.platform === 'win32',
+    });
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const finish = (result: RunResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
 
     child.stdout.on('data', (data) => {
       stdout += data.toString();
@@ -96,35 +153,121 @@ export async function runJest(testFilePath: string, cwd: string = process.cwd())
       stderr += data.toString();
     });
 
-    // 60-second timeout
     const timeoutId = setTimeout(() => {
       child.kill();
-      resolve({
+      finish({
         passed: false,
         stdout,
-        stderr: 'TIMEOUT: possible real DB connection or infinite loop. Test exceeded 60s.',
+        stderr: [stderr, timeoutMessage].filter(Boolean).join('\n'),
         exitCode: null,
+        command: [command, ...args].join(' '),
       });
-    }, 60_000);
+    }, PROCESS_TIMEOUT_MS);
 
     child.on('close', (code) => {
       clearTimeout(timeoutId);
-      resolve({
+      finish({
         passed: code === 0,
         stdout,
         stderr,
         exitCode: code,
+        command: [command, ...args].join(' '),
       });
     });
-    
+
     child.on('error', (err) => {
       clearTimeout(timeoutId);
-      resolve({
+      finish({
         passed: false,
         stdout,
-        stderr: `Process execution error: ${err.message}`,
+        stderr: [stderr, `Process execution error: ${err.message}`].filter(Boolean).join('\n'),
         exitCode: 1,
+        command: [command, ...args].join(' '),
       });
     });
   });
+}
+
+/** Runs the target project's linter against the generated test when possible. */
+export async function runLint(
+  testFilePath: string,
+  cwd: string = process.cwd(),
+): Promise<RunResult> {
+  const lintCommand = resolveLintCommand(testFilePath, cwd);
+  if (!lintCommand) {
+    return {
+      passed: true,
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+      skipped: true,
+    };
+  }
+
+  return runProcess(
+    lintCommand.command,
+    lintCommand.args,
+    cwd,
+    'TIMEOUT: lint exceeded 60s.',
+  );
+}
+
+/**
+ * Runs Jest on a specific test file.
+ * Uses child_process.spawn with a 60s timeout to prevent hanging.
+ */
+export async function runJest(
+  testFilePath: string,
+  cwd: string = process.cwd(),
+): Promise<RunResult> {
+  const configArgs = detectJestConfigArgs(cwd);
+
+  let command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  let args = ['jest', testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
+
+  const localJest = localBinary(cwd, 'jest');
+  if (localJest) {
+    command = localJest;
+    args = [testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
+  } else {
+    logger.warn('Jest not found in node_modules/.bin/jest, running with npx jest (slower)');
+  }
+
+  return runProcess(
+    command,
+    args,
+    cwd,
+    'TIMEOUT: possible real DB connection or infinite loop. Test exceeded 60s.',
+  );
+}
+
+/**
+ * Validates a generated test with lint first and Jest second. A failing lint
+ * result is returned immediately so the next heal attempt receives that output.
+ */
+export async function validateTestFile(
+  testFilePath: string,
+  cwd: string = process.cwd(),
+  runners: ValidationRunners = {},
+): Promise<ValidationResult> {
+  const lintRunner = runners.runLint ?? runLint;
+  const jestRunner = runners.runJest ?? runJest;
+
+  const lintResult = await lintRunner(testFilePath, cwd);
+  const lintSkipped = lintResult.skipped === true;
+
+  if (!lintSkipped && !lintResult.passed) {
+    return { ...lintResult, source: 'lint', lintSkipped };
+  }
+
+  const jestResult = await jestRunner(testFilePath, cwd);
+  return { ...jestResult, source: 'jest', lintSkipped };
+}
+
+/** Keeps stderr and stdout together so the repair prompt never loses either stream. */
+export function formatRunOutput(result: RunResult): string {
+  const sections: string[] = [];
+  if (result.stderr.trim()) sections.push(`=== STDERR ===\n${result.stderr.trim()}`);
+  if (result.stdout.trim()) sections.push(`=== STDOUT ===\n${result.stdout.trim()}`);
+  return sections.join('\n\n') || 'Unknown error (runner produced no output)';
 }
