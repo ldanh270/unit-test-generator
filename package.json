@@ -1,0 +1,64 @@
+{
+  "name": "@ldanh270/aatest",
+  "version": "1.0.17",
+  "description": "AI-powered Jest test generation and self-healing for Node.js projects",
+  "author": "ldanh270",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/ldanh270/unit-test-generator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ldanh270/unit-test-generator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ldanh270/unit-test-generator/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "cli",
+    "testing",
+    "jest",
+    "ai",
+    "llm",
+    "unit-test",
+    "express",
+    "typescript",
+    "openai-compatible"
+  ],
+  "bin": {
+    "aatest": "./dist/index.js"
+  },
+  "type": "module",
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test test/unit-test-generator.test.ts",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.26.5",
+    "@babel/traverse": "^7.26.5",
+    "@babel/types": "^7.26.5",
+    "@inquirer/prompts": "^7.2.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.79.4",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "^22.20.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
