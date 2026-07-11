@@ -323,3 +323,57 @@ test('selfHeal honors 10 retries and uses the latest lint output before each fix
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test('selfHeal stops immediately when validation passes on attempt 4', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aatest-stop-pass-'));
+  const testFilePath = path.join(tempDir, 'example.spec.ts');
+  await fs.writeFile(testFilePath, 'const broken = true;', 'utf8');
+
+  let validationCalls = 0;
+  const validate = async (): Promise<ValidationResult> => {
+    const call = validationCalls++;
+    const passed = call === 4;
+    return {
+      passed,
+      stdout: passed ? 'PASS' : '',
+      stderr: passed ? '' : `failure ${call}`,
+      exitCode: passed ? 0 : 1,
+      source: 'jest',
+      lintSkipped: false,
+    };
+  };
+
+  let completionCalls = 0;
+  const llmClient = {
+    complete: async () => {
+      const call = completionCalls++;
+      if (call % 2 === 0) return '- Root cause';
+      return '```typescript\nconst fixed = true;\n```';
+    },
+  } as unknown as LLMClient;
+
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => undefined;
+  console.error = () => undefined;
+
+  try {
+    await selfHeal({
+      testFilePath,
+      sourceDir: tempDir,
+      llmClient,
+      systemMessages: [{ role: 'system', content: 'Return one complete test file.' }],
+      maxRetries: 10,
+      autoHeal: true,
+      cwd: tempDir,
+    }, { validate });
+
+    assert.equal(validationCalls, 5, 'initial validation plus four repair validations');
+    assert.equal(completionCalls, 8, 'four diagnoses and four repairs; attempts 5-10 never run');
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+    assert.ok(tempDir.startsWith(os.tmpdir()));
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});

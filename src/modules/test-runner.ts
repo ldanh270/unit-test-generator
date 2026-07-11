@@ -219,12 +219,18 @@ export async function runLint(
     };
   }
 
+  logger.info(`[Validation] Running ${lintCommand.tool}: ${lintCommand.command} ${lintCommand.args.join(' ')}`);
   const result = await runProcess(
     lintCommand.command,
     lintCommand.args,
     cwd,
     'TIMEOUT: lint exceeded 60s.',
   );
+  if (result.passed) {
+    logger.success(`[Validation] ${lintCommand.tool} passed.`);
+  } else {
+    logger.warn(`[Validation] ${lintCommand.tool} exited with code ${String(result.exitCode)}.`);
+  }
   return {
     ...result,
     staticCheckScope: lintCommand.scope,
@@ -268,22 +274,29 @@ export async function runJest(
   const configArgs = detectJestConfigArgs(cwd);
 
   let command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  let args = ['jest', testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
+  let args = ['jest', testFilePath, '--runInBand', '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
 
   const localJest = localBinary(cwd, 'jest');
   if (localJest) {
     command = localJest;
-    args = [testFilePath, '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
+    args = [testFilePath, '--runInBand', '--no-coverage', '--colors=false', '--forceExit', ...configArgs];
   } else {
     logger.warn('Jest not found in node_modules/.bin/jest, running with npx jest (slower)');
   }
 
-  return runProcess(
+  logger.info(`[Validation] Running Jest for ${path.relative(cwd, testFilePath)}...`);
+  const result = await runProcess(
     command,
     args,
     cwd,
     'TIMEOUT: possible real DB connection or infinite loop. Test exceeded 60s.',
   );
+  if (result.passed) {
+    logger.success('[Validation] Jest passed.');
+  } else {
+    logger.warn(`[Validation] Jest exited with code ${String(result.exitCode)}.`);
+  }
+  return result;
 }
 
 /**

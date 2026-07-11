@@ -49,6 +49,25 @@ function ensureTypeScriptJestReference(code: string, testFilePath: string): stri
   return `/// <reference types="jest" />\n${code}`;
 }
 
+function stopIfPassed(
+  result: ValidationResult,
+  testFilePath: string,
+  attempt?: number,
+): boolean {
+  if (!result.passed) return false;
+
+  const validationSummary = result.lintSkipped
+    ? 'Tests passed (lint unavailable)'
+    : result.lintIgnored
+      ? 'Tests passed (unrelated project-wide static errors ignored)'
+      : 'Lint and tests passed';
+  const attemptSummary = attempt === undefined
+    ? ''
+    : ` on attempt ${attempt}; stopping early with ${attempt} of the allowed retries used`;
+  logger.success(`${validationSummary}${attemptSummary} for ${testFilePath}`);
+  return true;
+}
+
 /**
  * Runs the generated file through lint -> Jest, diagnoses each failure, then
  * asks the LLM for a repair. The validation output from one attempt becomes
@@ -66,15 +85,7 @@ export async function selfHeal(
     logger.warn('No local ESLint/Biome binary or package.json lint script found; lint validation was skipped.');
   }
 
-  if (result.passed) {
-    const validationSummary = result.lintSkipped
-      ? 'Tests passed (lint unavailable)'
-      : result.lintIgnored
-        ? 'Tests passed (unrelated project-wide static errors ignored)'
-        : 'Lint and tests passed';
-    logger.success(`${validationSummary} for ${testFilePath}`);
-    return;
-  }
+  if (stopIfPassed(result, testFilePath)) return;
 
   logger.error(`${diagnosticName(result)} validation failed for ${testFilePath}`);
   const initialErrorOutput = formatRunOutput(result);
@@ -208,10 +219,7 @@ export async function selfHeal(
     logger.info('File updated with potential fix. Running lint, then Jest...');
 
     result = await validate(testFilePath, cwd);
-    if (result.passed) {
-      logger.success(`Self-healing successful on attempt ${attempt}!`);
-      return;
-    }
+    if (stopIfPassed(result, testFilePath, attempt)) return;
 
     logger.warn(`Self-healing attempt ${attempt} failed ${diagnosticName(result)} validation.`);
   }
