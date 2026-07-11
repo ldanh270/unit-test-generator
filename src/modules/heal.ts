@@ -67,7 +67,11 @@ export async function selfHeal(
   }
 
   if (result.passed) {
-    const validationSummary = result.lintSkipped ? 'Tests passed (lint unavailable)' : 'Lint and tests passed';
+    const validationSummary = result.lintSkipped
+      ? 'Tests passed (lint unavailable)'
+      : result.lintIgnored
+        ? 'Tests passed (unrelated project-wide static errors ignored)'
+        : 'Lint and tests passed';
     logger.success(`${validationSummary} for ${testFilePath}`);
     return;
   }
@@ -193,6 +197,7 @@ export async function selfHeal(
           exitCode: 1,
           source: 'parse',
           lintSkipped: result.lintSkipped,
+          lintIgnored: result.lintIgnored,
         };
         continue;
       }

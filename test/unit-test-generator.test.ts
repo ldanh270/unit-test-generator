@@ -6,6 +6,7 @@ import path from 'node:path';
 import { loadConfig, parseMaxRetries } from '../src/config.js';
 import {
   formatRunOutput,
+  isStaticCheckFailureRelevant,
   resolveLintCommand,
   RunResult,
   validateTestFile,
@@ -19,6 +20,10 @@ import {
 import { selfHeal } from '../src/modules/heal.js';
 import { LLMClient } from '../src/llm/client.js';
 import { ChatMessage } from '../src/types/llm.js';
+import {
+  checkMissingDependencies,
+  ensureJestTypesInTsConfig,
+} from '../src/utils/dependency-checker.js';
 
 function result(overrides: Partial<RunResult> = {}): RunResult {
   return {
@@ -32,7 +37,7 @@ function result(overrides: Partial<RunResult> = {}): RunResult {
 
 test('retry configuration accepts 10 and rejects invalid values', () => {
   assert.equal(parseMaxRetries('10'), 10);
-  assert.equal(parseMaxRetries(undefined), 3);
+  assert.equal(parseMaxRetries(undefined), 10);
   assert.throws(() => parseMaxRetries('0', 'TEST_GEN_MAX_RETRIES'), /positive integer/);
   assert.throws(() => parseMaxRetries('3oops', '--retries'), /positive integer/);
 });
@@ -85,10 +90,75 @@ test('resolveLintCommand prefers a local file-scoped ESLint binary', async () =>
     assert.ok(command);
     assert.equal(command.command, executable);
     assert.deepEqual(command.args, [path.join('src', 'example.spec.ts')]);
+    assert.equal(command.scope, 'file');
+    assert.equal(command.tool, 'eslint');
   } finally {
     assert.ok(tempDir.startsWith(os.tmpdir()));
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test('TypeScript preflight installs Node types and injects Jest plus Node ambient types', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aatest-types-'));
+  try {
+    await fs.writeFile(path.join(tempDir, 'package.json'), JSON.stringify({
+      devDependencies: {
+        typescript: '1.0.0',
+        jest: '1.0.0',
+        supertest: '1.0.0',
+        '@types/jest': '1.0.0',
+        '@types/supertest': '1.0.0',
+        'ts-jest': '1.0.0',
+      },
+    }), 'utf8');
+    await fs.writeFile(path.join(tempDir, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: { types: ['jest'] },
+    }), 'utf8');
+
+    assert.deepEqual(checkMissingDependencies(tempDir), ['@types/node']);
+    ensureJestTypesInTsConfig(tempDir);
+
+    const tsconfig = JSON.parse(await fs.readFile(path.join(tempDir, 'tsconfig.json'), 'utf8'));
+    assert.deepEqual(tsconfig.compilerOptions.types, ['jest', 'node']);
+  } finally {
+    assert.ok(tempDir.startsWith(os.tmpdir()));
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('static checks fall back to typecheck when no lint tool or script exists', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aatest-typecheck-'));
+  try {
+    await fs.writeFile(path.join(tempDir, 'package.json'), JSON.stringify({
+      scripts: { typecheck: 'tsc --noEmit' },
+    }), 'utf8');
+
+    const command = resolveLintCommand(path.join(tempDir, 'src', 'example.spec.ts'), tempDir);
+    assert.ok(command);
+    assert.deepEqual(command.args, ['run', 'typecheck']);
+    assert.equal(command.scope, 'project');
+    assert.equal(command.tool, 'typecheck');
+  } finally {
+    assert.ok(tempDir.startsWith(os.tmpdir()));
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('project-wide static failures are relevant only when they name the generated file', () => {
+  const cwd = path.resolve('target-project');
+  const testFile = path.join(cwd, 'src', '__tests__', 'auth.service.spec.ts');
+
+  assert.equal(isStaticCheckFailureRelevant(result({
+    stderr: 'src/__tests__/employee.service.spec.ts(10,2): error TS2322',
+    staticCheckScope: 'project',
+    staticCheckTool: 'typecheck',
+  }), testFile, cwd), false);
+
+  assert.equal(isStaticCheckFailureRelevant(result({
+    stderr: 'src/__tests__/auth.service.spec.ts(10,2): error TS2322',
+    staticCheckScope: 'project',
+    staticCheckTool: 'typecheck',
+  }), testFile, cwd), true);
 });
 
 test('validateTestFile feeds lint failures back before Jest', async () => {
@@ -113,6 +183,43 @@ test('validateTestFile feeds lint failures back before Jest', async () => {
   });
 
   assert.equal(jestFailure.source, 'jest');
+  assert.equal(jestCalls, 1);
+});
+
+test('validateTestFile ignores unrelated project errors but keeps generated-file errors', async () => {
+  const cwd = path.resolve('target-project');
+  const testFile = path.join(cwd, 'src', '__tests__', 'auth.service.spec.ts');
+  let jestCalls = 0;
+
+  const unrelated = await validateTestFile(testFile, cwd, {
+    runLint: async () => result({
+      stderr: 'src/__tests__/employee.service.spec.ts(1,1): error TS2322',
+      staticCheckScope: 'project',
+      staticCheckTool: 'typecheck',
+    }),
+    runJest: async () => {
+      jestCalls++;
+      return result({ passed: true, stderr: '', exitCode: 0 });
+    },
+  });
+  assert.equal(unrelated.source, 'jest');
+  assert.equal(unrelated.passed, true);
+  assert.equal(unrelated.lintIgnored, true);
+  assert.equal(jestCalls, 1);
+
+  const relevant = await validateTestFile(testFile, cwd, {
+    runLint: async () => result({
+      stderr: 'src/__tests__/auth.service.spec.ts(1,1): error TS2322',
+      staticCheckScope: 'project',
+      staticCheckTool: 'typecheck',
+    }),
+    runJest: async () => {
+      jestCalls++;
+      return result({ passed: true });
+    },
+  });
+  assert.equal(relevant.source, 'lint');
+  assert.equal(relevant.lintIgnored, false);
   assert.equal(jestCalls, 1);
 });
 

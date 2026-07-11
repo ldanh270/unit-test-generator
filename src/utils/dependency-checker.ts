@@ -26,7 +26,7 @@ export function checkMissingDependencies(projectDir: string): string[] {
   const requiredDeps = ['jest', 'supertest'];
   if (isTypeScriptProject(projectDir)) {
     // If it's a TS project, ts-jest is highly recommended for running Jest without Babel
-    requiredDeps.push('@types/jest', '@types/supertest', 'ts-jest');
+    requiredDeps.push('@types/jest', '@types/supertest', '@types/node', 'ts-jest');
   }
   
   const missingDeps: string[] = [];
@@ -189,20 +189,19 @@ module.exports = {
       }
     }
 
-    // Ensure tsconfig.json includes jest types so TypeScript recognises
-    // jest globals (describe, it, expect, jest.mock, etc.) without errors.
+    // Ensure tsconfig.json includes both test and Node runtime ambient types.
     ensureJestTypesInTsConfig(projectDir);
   }
 }
 
 /**
- * Patches tsconfig.json to add "jest" to compilerOptions.types so that
- * TypeScript recognises jest globals (describe, it, expect, jest.mock, etc.)
- * in generated test files without throwing TS2304 "Cannot find name 'jest'".
+ * Patches tsconfig.json to add "jest" and "node" to compilerOptions.types so
+ * generated tests and imported backend source recognise Jest globals plus Node
+ * APIs such as `process`, `Buffer`, `crypto`, and `fs`.
  *
  * Only modifies the file if:
  *  - tsconfig.json exists in projectDir
- *  - compilerOptions.types is either absent or does not already include "jest"
+ *  - either required ambient type is absent
  */
 export function ensureJestTypesInTsConfig(projectDir: string): void {
   const tsconfigPath = path.join(projectDir, 'tsconfig.json');
@@ -227,15 +226,19 @@ export function ensureJestTypesInTsConfig(projectDir: string): void {
   }
 
   tsconfig.compilerOptions = tsconfig.compilerOptions || {};
-  const types: string[] = tsconfig.compilerOptions.types ?? [];
+  const types: string[] = Array.isArray(tsconfig.compilerOptions.types)
+    ? tsconfig.compilerOptions.types
+    : [];
+  const requiredTypes = ['jest', 'node'];
+  const missingTypes = requiredTypes.filter((type) => !types.includes(type));
 
-  if (types.includes('jest')) return; // already there
+  if (missingTypes.length === 0) return;
 
-  tsconfig.compilerOptions.types = [...types, 'jest'];
+  tsconfig.compilerOptions.types = [...types, ...missingTypes];
 
   try {
     fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2) + '\n', 'utf8');
-    logger.success('Added "jest" to compilerOptions.types in tsconfig.json');
+    logger.success(`Added ${missingTypes.map((type) => `"${type}"`).join(', ')} to compilerOptions.types in tsconfig.json`);
   } catch (err: any) {
     logger.warn(`Could not update tsconfig.json: ${err.message}`);
   }

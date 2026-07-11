@@ -48,7 +48,7 @@ export const initCommand = new Command('init')
         }),
         maxRetries: await input({
           message: 'Max retries for self-healing:',
-          default: '3',
+          default: '10',
         }),
       };
 

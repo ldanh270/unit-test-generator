@@ -11,7 +11,7 @@
 
 * **Zero-config setup** — Interactive CLI wizard to get you started immediately.
 * **AST Context Parsing** — Accurately detects exports, internal dependencies, and functions.
-* **Auto Self-Healing** — Automatically runs generated tests; if they fail, `aatest` feeds the errors back to the AI to fix them iteratively.
+* **Diagnostic Self-Healing** — Normalizes TypeScript/Jest ambient types, runs file-scoped lint (or project typecheck), analyzes the root cause, and feeds only diagnostics relevant to the generated test back to the AI.
 * **LLM Agnostic** — Bring your own API key (OpenAI, Anthropic, OpenRouter).
 * **Safe Mode** — Generates and backs up files automatically without overwriting your existing code.
 
@@ -42,8 +42,12 @@ npx @ldanh270/aatest unit src/controllers/user.js
 To let `aatest` automatically attempt to fix tests if they fail assertions:
 
 ```bash
-npx @ldanh270/aatest unit src/controllers/user.js --auto-heal --retries 3
+npx @ldanh270/aatest unit src/controllers/user.js --auto-heal --retries 10
 ```
+
+Validation runs in this order: local ESLint/Biome, the project's `lint` script,
+the project's `typecheck` script, then Jest. Project-wide static errors that do
+not reference the generated test file are reported but excluded from healing.
 
 ## Installation (Optional)
 
@@ -72,7 +76,7 @@ Generates a unit test for the provided file path.
 **Options:**
 * `-s, --source <dir>`: Override the default output directory.
 * `-H, --auto-heal`: Automatically run tests and attempt to fix failures.
-* `-r, --retries <n>`: Maximum number of self-healing retries (default: 3).
+* `-r, --retries <n>`: Maximum number of self-healing retries (default: 10).
 * `--dry-run`: Output the generated code to the console without saving it.
 * `-v, --verbose`: Enable verbose logging for debugging.
 
@@ -85,7 +89,7 @@ TEST_GEN_BASE_URL=https://api.openai.com/v1
 TEST_GEN_API_KEY=your_api_key
 TEST_GEN_MODEL=gpt-4o
 TEST_GEN_SOURCE=./src/__tests__
-TEST_GEN_MAX_RETRIES=3
+TEST_GEN_MAX_RETRIES=10
 ```
 
 The CLI reads `.env` (then `.env.test-gen` as a fallback) from the directory

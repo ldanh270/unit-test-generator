@@ -38,7 +38,7 @@
             │           (hoặc auto nếu --auto-heal)
             ▼
     [Self-Healing Loop]  (src/modules/heal.ts)
-            │  Gửi (code + stderr) lên LLM → Fix → Retry (tối đa 3 lần)
+            │  Static check → Analyze → Fix → Jest → Retry (mặc định 10 lần)
             ▼
     [Output]
             <source>/controllers/user.controller.spec.js  ✅
@@ -98,7 +98,7 @@ TEST_GEN_MODEL=anthropic/claude-sonnet-4-5        # Tên model
 
 # Optional
 TEST_GEN_SOURCE=./src/tests         # Thư mục output cho test files
-TEST_GEN_MAX_RETRIES=3              # Số lần retry self-heal (default: 3)
+TEST_GEN_MAX_RETRIES=10             # Số lần retry self-heal (default: 10)
 ```
 
 > **Lưu ý**: Nếu không có `TEST_GEN_BASE_URL`, default là `https://api.openai.com/v1`.
@@ -118,7 +118,7 @@ TEST_GEN_MAX_RETRIES=3              # Số lần retry self-heal (default: 3)
 |---|---|---|
 | `--source <dir>` | `-s` | Override thư mục output test (ưu tiên cao nhất) |
 | `--auto-heal` | `-H` | Tự động self-heal khi test fail, không hỏi |
-| `--retries <n>` | `-r` | Override số lần retry (default: `TEST_GEN_MAX_RETRIES` hoặc 3) |
+| `--retries <n>` | `-r` | Override số lần retry (default: `TEST_GEN_MAX_RETRIES` hoặc 10) |
 | `--dry-run` | | In prompt + LLM response, không ghi file |
 | `--verbose` | `-v` | Log chi tiết từng bước |
 
@@ -218,7 +218,7 @@ export default defineConfig({
 // 2. API Key?
 // 3. Model name? (VD: gpt-4o, anthropic/claude-sonnet-4-5)
 // 4. Default output directory? (VD: src/__tests__)
-// 5. Max retries? (default: 3)
+// 5. Max retries? (default: 10)
 //
 // Sau đó:
 // - Hỏi: "Append to existing .env or create new .env.test-gen?"
@@ -453,7 +453,7 @@ function extractCodeBlock(llmResponse: string): string
 
 ## Phase 5: Test Runner & Self-Healing Loop
 
-**Mục tiêu**: Chạy Jest, hỏi user trước khi self-heal (hoặc auto nếu `--auto-heal`).
+**Mục tiêu**: Chuẩn hóa Jest/Node types, chạy lint hoặc typecheck trước Jest, hỏi user trước khi self-heal (hoặc auto nếu `--auto-heal`).
 
 ### Tasks
 
@@ -535,7 +535,7 @@ In ra: đường dẫn file log để user debug
 
 | # | Rủi ro | Giải pháp |
 |---|---|---|
-| 1 | **Self-heal vô hạn** | Hard limit `maxRetries` (default 3, configurable). Sau khi hết → ghi `.error.log`, exit code 1 |
+| 1 | **Self-heal vô hạn** | Hard limit `maxRetries` (default 10, configurable). Sau khi hết → ghi `.error.log`, exit code 1 |
 | 2 | **LLM response không có code block** | `extractCodeBlock()` throw `ParseError`. Không ghi file. Retry prompt với hint: "You forgot the code fence markers" (tính vào retry count) |
 | 3 | **File quá lớn, vượt context limit LLM** | Nếu `fileContent` > 8000 chars: truncate, chỉ giữ function signatures + JSDoc. Warn user. Nếu LLM trả lỗi 400/413 → emit error rõ ràng |
 | 4 | **Database bị gọi thật trong test** | Prompt engineer rõ. Nếu test timeout (>60s) → coi là FAIL với stderr "TIMEOUT: possible real DB connection" |

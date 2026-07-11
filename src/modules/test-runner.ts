@@ -10,6 +10,8 @@ export interface RunResult {
   exitCode: number | null;
   skipped?: boolean;
   command?: string;
+  staticCheckScope?: 'file' | 'project';
+  staticCheckTool?: 'eslint' | 'biome' | 'lint' | 'typecheck';
 }
 
 export type DiagnosticSource = 'lint' | 'jest' | 'parse';
@@ -17,11 +19,14 @@ export type DiagnosticSource = 'lint' | 'jest' | 'parse';
 export interface ValidationResult extends RunResult {
   source: DiagnosticSource;
   lintSkipped: boolean;
+  lintIgnored?: boolean;
 }
 
 export interface CommandSpec {
   command: string;
   args: string[];
+  scope: 'file' | 'project';
+  tool: 'eslint' | 'biome' | 'lint' | 'typecheck';
 }
 
 type TestRunner = (testFilePath: string, cwd: string) => Promise<RunResult>;
@@ -104,23 +109,33 @@ export function resolveLintCommand(testFilePath: string, projectDir: string): Co
 
   const eslint = localBinary(projectDir, 'eslint');
   if (eslint) {
-    return { command: eslint, args: [relativeTestPath] };
+    return { command: eslint, args: [relativeTestPath], scope: 'file', tool: 'eslint' };
   }
 
   const biome = localBinary(projectDir, 'biome');
   if (biome) {
-    return { command: biome, args: ['check', relativeTestPath] };
+    return { command: biome, args: ['check', relativeTestPath], scope: 'file', tool: 'biome' };
   }
 
   const pkg = readPackageJson(projectDir);
-  if (!pkg?.scripts?.lint) return null;
+  const scriptName = pkg?.scripts?.lint
+    ? 'lint'
+    : pkg?.scripts?.typecheck
+      ? 'typecheck'
+      : null;
+  if (!scriptName) return null;
 
   const packageManager = detectPackageManager(projectDir);
   const executable = process.platform === 'win32' ? `${packageManager}.cmd` : packageManager;
 
   // Run the project's script exactly as declared. Appending a file breaks valid
   // scripts such as `tsc --noEmit`; direct ESLint/Biome paths above stay file-scoped.
-  return { command: executable, args: ['run', 'lint'] };
+  return {
+    command: executable,
+    args: ['run', scriptName],
+    scope: 'project',
+    tool: scriptName,
+  };
 }
 
 function runProcess(
@@ -204,12 +219,42 @@ export async function runLint(
     };
   }
 
-  return runProcess(
+  const result = await runProcess(
     lintCommand.command,
     lintCommand.args,
     cwd,
     'TIMEOUT: lint exceeded 60s.',
   );
+  return {
+    ...result,
+    staticCheckScope: lintCommand.scope,
+    staticCheckTool: lintCommand.tool,
+  };
+}
+
+function normalizeDiagnosticPath(value: string): string {
+  return value.replace(/\\/g, '/').toLowerCase();
+}
+
+/**
+ * Project-wide scripts may fail because of unrelated legacy files. Only feed
+ * their output to the repair loop when it names the generated test file.
+ */
+export function isStaticCheckFailureRelevant(
+  result: RunResult,
+  testFilePath: string,
+  cwd: string,
+): boolean {
+  if (result.passed || result.staticCheckScope !== 'project') return true;
+
+  const output = normalizeDiagnosticPath(`${result.stderr}\n${result.stdout}`);
+  const resolvedTestFile = path.isAbsolute(testFilePath)
+    ? testFilePath
+    : path.resolve(cwd, testFilePath);
+  const absolutePath = normalizeDiagnosticPath(resolvedTestFile);
+  const relativePath = normalizeDiagnosticPath(path.relative(cwd, resolvedTestFile));
+
+  return output.includes(absolutePath) || output.includes(relativePath);
 }
 
 /**
@@ -255,13 +300,23 @@ export async function validateTestFile(
 
   const lintResult = await lintRunner(testFilePath, cwd);
   const lintSkipped = lintResult.skipped === true;
+  const lintIgnored = !lintSkipped
+    && !lintResult.passed
+    && !isStaticCheckFailureRelevant(lintResult, testFilePath, cwd);
 
-  if (!lintSkipped && !lintResult.passed) {
-    return { ...lintResult, source: 'lint', lintSkipped };
+  if (!lintSkipped && !lintResult.passed && !lintIgnored) {
+    return { ...lintResult, source: 'lint', lintSkipped, lintIgnored: false };
+  }
+
+  if (lintIgnored) {
+    const tool = lintResult.staticCheckTool ?? 'static check';
+    logger.warn(
+      `Project-wide ${tool} failed only in files unrelated to ${path.relative(cwd, testFilePath)}; continuing with Jest for the generated test.`,
+    );
   }
 
   const jestResult = await jestRunner(testFilePath, cwd);
-  return { ...jestResult, source: 'jest', lintSkipped };
+  return { ...jestResult, source: 'jest', lintSkipped, lintIgnored };
 }
 
 /** Keeps stderr and stdout together so the repair prompt never loses either stream. */

@@ -1,9 +1,11 @@
 # Phase 5: Test Runner & Self-Healing Loop
 
-**Mục tiêu**: Kết nối tất cả các thành phần lại với nhau để chạy thử nghiệm (Jest), phát hiện lỗi và tự động gửi lỗi đó cho LLM (Self-Healing) để LLM sửa lại test code. Cuối cùng, ghép toàn bộ logic này vào lệnh CLI `test-gen unit`.
+**Mục tiêu**: Chuẩn hóa môi trường TypeScript/Jest, chạy static validation rồi Jest, phân tích nguyên nhân và chỉ gửi diagnostics liên quan tới file test vừa sinh cho LLM sửa. Cuối cùng, ghép toàn bộ logic này vào lệnh CLI `test-gen unit`.
 
 ## 1. Test Runner (`src/modules/test-runner.ts`)
-Module này chịu trách nhiệm chạy Jest một cách độc lập thông qua `child_process.spawn`.
+Module này chịu trách nhiệm chạy static check và Jest độc lập qua `child_process.spawn`.
+- **Static check priority**: ESLint/Biome local theo đúng file → script `lint` → script `typecheck`.
+- **Lọc diagnostics**: Với script chạy toàn project, chỉ fail heal khi output nhắc tới file test generated. Lỗi ở file khác được cảnh báo rồi bỏ qua.
 - **Thực thi**: Gọi lệnh `npx jest <file> --no-coverage --colors=false --forceExit`.
 - **Kiểm tra môi trường**: Tự động phát hiện nếu `jest` có sẵn trong `node_modules/.bin/jest` hay không (nếu không có thì dùng `npx jest` và cảnh báo người dùng).
 - **Timeout**: Thiết lập giới hạn thời gian (VD: 60s). Nếu test chạy quá thời gian (ví dụ bị kẹt kết nối DB thật), sẽ tự động ngắt (kill process) và trả về lỗi `TIMEOUT`.
@@ -12,18 +14,19 @@ Module này chịu trách nhiệm chạy Jest một cách độc lập thông qu
 ## 2. Vòng lặp Self-Healing (`src/modules/heal.ts`)
 Đây là trái tim của việc tự động sửa lỗi code do AI viết sai. Vòng lặp (loop) hoạt động như sau:
 1. Nhận vào file test cần chạy.
-2. Gọi `test-runner.ts` để chạy Jest.
+2. Chạy static check. Nếu pass/skip hoặc chỉ lỗi file không liên quan thì chạy Jest.
 3. Nếu **Pass** ✅: Kết thúc thành công.
 4. Nếu **Fail** ❌:
    - Nếu cờ `--auto-heal` được bật: tự động chạy bước sửa lỗi.
    - Nếu không có `--auto-heal`: Dùng `@inquirer/prompts` để hỏi người dùng: *"Tests failed. Do you want to auto-fix? (Tip: use --auto-heal to skip this prompt)"*. Nếu user chọn "No", dừng chương trình.
 5. **Tiến trình Heal (tối đa `maxRetries` lần)**:
    - Đọc code lỗi hiện tại.
-   - Gọi `buildFixPrompt` (từ Phase 3) với thông tin lỗi (`stderr`).
+   - Gọi LLM phân tích root cause riêng trước khi sửa.
+   - Gọi `buildFixPrompt` (từ Phase 3) với root cause và output kết hợp `stderr` + `stdout` mới nhất.
    - Gọi `LLMClient` để lấy code mới.
    - Dùng `extractCodeBlock` (từ Phase 4) để bóc tách code. Nếu LLM trả text linh tinh (ParseError), ghi `error.log` và tính là 1 lần retry thất bại.
    - **Ghi đè file** (không dùng cơ chế backup ở bước này để tránh rác ổ cứng).
-   - Chạy lại Jest. Lặp lại quá trình nếu vẫn Fail.
+   - Chạy lại static check rồi Jest. Lặp lại quá trình nếu vẫn Fail.
    - Nếu vượt quá số lần retries: Ghi file `[file_name].[timestamp].error.log` vào `.test-gen-errors/` (kèm `stderr` cuối cùng + `faulty code`) và exit chương trình.
 
 ## 3. Orchestrator (`src/commands/unit.ts`)
