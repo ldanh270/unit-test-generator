@@ -36,7 +36,7 @@ sequenceDiagram
     participant P as Target project
     participant L as LLM endpoint
 
-    U->>C: aatest unit source.ts
+    U->>C: npx @ldanh270/aatest unit source.ts
     C->>C: Load .env and .env.test-gen
     C->>P: Find nearest package.json
     C->>P: Check dependencies and Jest setup

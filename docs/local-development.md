@@ -57,7 +57,7 @@ Install the generated `.tgz` in a disposable target project:
 
 ```bash
 pnpm add -D C:\path\to\ldanh270-aatest-X.Y.Z.tgz
-pnpm exec aatest --version
+pnpm exec @ldanh270/aatest --version
 ```
 
 This exercises the same `files: ["dist"]` package shape that npm users receive.
@@ -71,7 +71,7 @@ shown above.
 2. Run `pnpm lint`, `pnpm test`, and `pnpm build`.
 3. Run `pnpm pack` and inspect the tarball contents.
 4. Install the tarball in a clean JavaScript or TypeScript fixture project.
-5. Verify `aatest --version`, `aatest --help`, `init`, dry-run, generation, and
+5. Verify `npx @ldanh270/aatest --version`, `npx @ldanh270/aatest --help`, `init`, dry-run, generation, and
    healing.
 6. Confirm package metadata and Apache-2.0 license.
 7. Publish using the repository's approved npm release process.

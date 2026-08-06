@@ -15,7 +15,7 @@ Run the CLI from the package whose configuration you intend to use:
 
 ```bash
 cd path/to/backend
-npx aatest unit src/services/user.service.ts
+npx @ldanh270/aatest unit src/services/user.service.ts
 ```
 
 ## Canonical variables

@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@ldanh270/aatest.svg?style=flat-square)](https://www.npmjs.com/package/@ldanh270/aatest)
 [![Node.js](https://img.shields.io/node/v/@ldanh270/aatest.svg?style=flat-square)](https://www.npmjs.com/package/@ldanh270/aatest)
+[![NPM Downloads](https://img.shields.io/npm/dt/@ldanh270/aatest?style=flat-square)](https://www.npmjs.com/package/@ldanh270/aatest)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
 
 Generate, validate, and repair Jest tests for JavaScript and TypeScript Node.js
@@ -45,25 +46,25 @@ Run these commands from the package that owns the source file:
 ```bash
 cd path/to/your-node-project
 npm install --save-dev @ldanh270/aatest
-npx aatest init
+npx @ldanh270/aatest init
 ```
 
 Generate a test:
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts
+npx @ldanh270/aatest unit src/controllers/user.controller.ts
 ```
 
 Generate and automatically repair failures, up to ten repair attempts:
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts --auto-heal --retries 10
+npx @ldanh270/aatest unit src/controllers/user.controller.ts --auto-heal --retries 10
 ```
 
 Preview the prompt and model response without writing the generated test:
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts --dry-run --verbose
+npx @ldanh270/aatest unit src/controllers/user.controller.ts --dry-run --verbose
 ```
 
 > `--dry-run` prevents test-file writes and validation, but environment and
@@ -102,7 +103,7 @@ OpenAI-compatible configuration.
 
 ## Configuration
 
-`aatest init` writes configuration to `.env` in the directory where it is run.
+`npx @ldanh270/aatest init` writes configuration to `.env` in the directory where it is run.
 If `.env` already exists and you choose not to append, it writes
 `.env.test-gen` instead.
 

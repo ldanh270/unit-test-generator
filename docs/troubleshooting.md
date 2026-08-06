@@ -3,7 +3,7 @@
 Run with `--verbose` when diagnosing provider or CLI failures:
 
 ```bash
-npx aatest unit src/services/auth.ts --auto-heal --verbose
+npx @ldanh270/aatest unit src/services/auth.ts --auto-heal --verbose
 ```
 
 ## Configuration is not detected
@@ -24,13 +24,13 @@ dotenv values, so remove or update stale session variables.
 The CLI prints the winning retry source. To force a value for one run:
 
 ```bash
-npx aatest unit src/services/auth.ts --auto-heal --retries 10
+npx @ldanh270/aatest unit src/services/auth.ts --auto-heal --retries 10
 ```
 
 Confirm that the installed version is current:
 
 ```bash
-npx aatest --version
+npx @ldanh270/aatest --version
 npm ls @ldanh270/aatest
 ```
 

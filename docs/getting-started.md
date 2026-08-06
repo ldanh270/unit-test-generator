@@ -40,8 +40,8 @@ bun add --dev @ldanh270/aatest
 Verify the installed binary:
 
 ```bash
-npx aatest --version
-npx aatest --help
+npx @ldanh270/aatest --version
+npx @ldanh270/aatest --help
 ```
 
 ## 3. Configure a provider
@@ -49,7 +49,7 @@ npx aatest --help
 Run the interactive wizard:
 
 ```bash
-npx aatest init
+npx @ldanh270/aatest init
 ```
 
 It asks for:
@@ -93,7 +93,7 @@ Use a clean Git branch so these changes are easy to review.
 ## 5. Preview generation
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts --dry-run --verbose
+npx @ldanh270/aatest unit src/controllers/user.controller.ts --dry-run --verbose
 ```
 
 The command prints the system prompt, source-context prompt, and raw model
@@ -103,7 +103,7 @@ run before the dry-run branch and may prompt for the changes listed above.
 ## 6. Generate a test
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts
+npx @ldanh270/aatest unit src/controllers/user.controller.ts
 ```
 
 For this layout:
@@ -137,7 +137,7 @@ user.controller.spec.2026-07-11T10-30-00.bak
 ## 7. Enable automatic repair
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts --auto-heal --retries 10
+npx @ldanh270/aatest unit src/controllers/user.controller.ts --auto-heal --retries 10
 ```
 
 Validation always runs. Without `--auto-heal`, a failure triggers a confirmation

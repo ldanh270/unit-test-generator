@@ -100,7 +100,7 @@ root-cause analysis.
 - A new user can install, configure, and generate a test from README alone.
 - Provider setup clearly separates local 9Router credentials from provider
   account credentials.
-- `aatest --version` matches `package.json`.
+- `npx @ldanh270/aatest --version` matches `package.json`.
 - Passing validation never consumes remaining repair attempts.
 - Lint, tests, and build pass before release.
 - Package metadata, README, and LICENSE all report Apache-2.0.

@@ -14,10 +14,10 @@ aatest --version
 When installed as a project dependency, invoke it through the package manager:
 
 ```bash
-npx aatest --help
-pnpm exec aatest --help
-yarn aatest --help
-bunx aatest --help
+npx @ldanh270/aatest --help
+pnpm exec @ldanh270/aatest --help
+yarn dlx @ldanh270/aatest --help
+bunx @ldanh270/aatest --help
 ```
 
 ## `aatest init`
@@ -25,7 +25,7 @@ bunx aatest --help
 Starts an interactive configuration and test-environment setup wizard.
 
 ```bash
-npx aatest init
+npx @ldanh270/aatest init
 ```
 
 Prompts for base URL, API key, model ID, output directory, and maximum retries.
@@ -47,7 +47,7 @@ Review the Git diff after running it.
 Generates and validates one test file.
 
 ```bash
-npx aatest unit src/controllers/user.controller.ts
+npx @ldanh270/aatest unit src/controllers/user.controller.ts
 ```
 
 The source path may be relative to the invocation directory or absolute.
@@ -59,7 +59,7 @@ The source path may be relative to the invocation directory or absolute.
 Overrides `TEST_GEN_SOURCE` for this invocation.
 
 ```bash
-npx aatest unit src/services/auth.ts --source ./test/generated
+npx @ldanh270/aatest unit src/services/auth.ts --source ./test/generated
 ```
 
 #### `-H, --auto-heal`
@@ -67,7 +67,7 @@ npx aatest unit src/services/auth.ts --source ./test/generated
 Skips the confirmation prompt before repairing a validation failure.
 
 ```bash
-npx aatest unit src/services/auth.ts --auto-heal
+npx @ldanh270/aatest unit src/services/auth.ts --auto-heal
 ```
 
 Validation runs with or without this flag.
@@ -78,7 +78,7 @@ Overrides the maximum repair-attempt count. The value must be a positive
 integer.
 
 ```bash
-npx aatest unit src/services/auth.ts --auto-heal --retries 10
+npx @ldanh270/aatest unit src/services/auth.ts --auto-heal --retries 10
 ```
 
 #### `--dry-run`
@@ -87,7 +87,7 @@ Prints the system prompt, user prompt, and raw model response. It does not write
 the generated test or run validation.
 
 ```bash
-npx aatest unit src/services/auth.ts --dry-run
+npx @ldanh270/aatest unit src/services/auth.ts --dry-run
 ```
 
 Dependency and configuration setup occurs before the dry-run branch.
@@ -97,7 +97,7 @@ Dependency and configuration setup occurs before the dry-run branch.
 Prints provider token usage and error stack traces when available.
 
 ```bash
-npx aatest unit src/services/auth.ts --dry-run --verbose
+npx @ldanh270/aatest unit src/services/auth.ts --dry-run --verbose
 ```
 
 ## Command lifecycle

@@ -47,9 +47,9 @@ The official defaults are:
 9Router's README uses `kr/claude-sonnet-4.5` as an example. Model availability
 can change; always prefer the exact value displayed by your running dashboard.
 
-### Configure aatest
+### Configure @ldanh270/aatest
 
-Run `npx aatest init`, or set:
+Run `npx @ldanh270/aatest init`, or set:
 
 ```env
 TEST_GEN_BASE_URL=http://localhost:20128/v1
