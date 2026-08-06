@@ -1,6 +1,6 @@
 {
   "name": "@ldanh270/aatest",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "AI-powered Jest test generation and self-healing for Node.js projects",
   "author": "ldanh270",
   "license": "Apache-2.0",
